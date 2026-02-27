@@ -2,14 +2,19 @@
 
 #include "cxlsx/cxlsx.h"
 
+#include "../vendor/duckdb-bin/duckdb.h"
 #include <sqlite3.h>
 
 #include <cstdio>
 #include <cstring>
+#include <fstream>
+#include <iterator>
+#include <string>
 #include <vector>
 
 namespace {
 constexpr const char *kDefaultDbPath = "test_export_cache.db";
+constexpr const char *kDefaultDuckDbPath = "test_export_cache.duckdb";
 constexpr const char *kDefaultXlsxPath = "test_export_result.xlsx";
 constexpr int kSeedRowCount = 10000;
 const char *kTestLicenseKey =
@@ -74,6 +79,83 @@ int create_seed_sqlite_db(const char *db_path, int row_count) {
   return 0;
 }
 
+bool duckdb_exec(duckdb_connection conn, const char *sql, std::string *err) {
+  duckdb_result r{};
+  if (duckdb_query(conn, sql, &r) != DuckDBSuccess) {
+    const char *msg = duckdb_result_error(&r);
+    *err = msg ? msg : "duckdb query failed";
+    duckdb_destroy_result(&r);
+    return false;
+  }
+  duckdb_destroy_result(&r);
+  return true;
+}
+
+int create_seed_duckdb_db(const char *db_path, int row_count) {
+  duckdb_database db = nullptr;
+  duckdb_connection conn = nullptr;
+  std::string err;
+  if (duckdb_open(db_path, &db) != DuckDBSuccess) {
+    return -1;
+  }
+  if (duckdb_connect(db, &conn) != DuckDBSuccess) {
+    duckdb_close(&db);
+    return -1;
+  }
+
+  if (!duckdb_exec(conn,
+                   "CREATE TABLE IF NOT EXISTS sample_data ("
+                   "id BIGINT, name VARCHAR, sql_text VARCHAR, score BIGINT, "
+                   "created_at VARCHAR);",
+                   &err)) {
+    duckdb_disconnect(&conn);
+    duckdb_close(&db);
+    return -1;
+  }
+
+  duckdb_result count_result{};
+  int existing = 0;
+  if (duckdb_query(conn, "SELECT COUNT(*) FROM sample_data;", &count_result) ==
+      DuckDBSuccess) {
+    existing = static_cast<int>(duckdb_value_int64(&count_result, 0, 0));
+  }
+  duckdb_destroy_result(&count_result);
+  if (existing >= row_count) {
+    duckdb_disconnect(&conn);
+    duckdb_close(&db);
+    return 0;
+  }
+
+  if (!duckdb_exec(conn, "BEGIN TRANSACTION;", &err)) {
+    duckdb_disconnect(&conn);
+    duckdb_close(&db);
+    return -1;
+  }
+  for (int i = existing + 1; i <= row_count; ++i) {
+    char sql[512];
+    snprintf(sql, sizeof(sql),
+             "INSERT INTO sample_data VALUES (%d, 'user_%05d', "
+             "'SELECT * FROM sample_data WHERE id=%d;', %d, '2026-02-%02d "
+             "10:%02d:%02d');",
+             i, i, i, i % 101, 1 + (i % 28), i % 60, (i * 7) % 60);
+    if (!duckdb_exec(conn, sql, &err)) {
+      duckdb_exec(conn, "ROLLBACK;", &err);
+      duckdb_disconnect(&conn);
+      duckdb_close(&db);
+      return -1;
+    }
+  }
+  if (!duckdb_exec(conn, "COMMIT;", &err)) {
+    duckdb_disconnect(&conn);
+    duckdb_close(&db);
+    return -1;
+  }
+
+  duckdb_disconnect(&conn);
+  duckdb_close(&db);
+  return 0;
+}
+
 int verify_exported_xlsx(const char *xlsx_path, int expected_rows) {
   cxlsx_reader *r = cxlsx_reader_open(xlsx_path, nullptr);
   if (r == nullptr) {
@@ -97,21 +179,73 @@ int verify_exported_xlsx(const char *xlsx_path, int expected_rows) {
   cxlsx_reader_close(r);
   return 0;
 }
+
+int verify_exported_json(const char *json_path) {
+  std::ifstream in(json_path, std::ios::binary);
+  if (!in.is_open()) {
+    return -1;
+  }
+  const std::string content((std::istreambuf_iterator<char>(in)),
+                            std::istreambuf_iterator<char>());
+  if (content.find("\"columns\"") == std::string::npos) {
+    return -1;
+  }
+  if (content.find("\"rows\"") == std::string::npos) {
+    return -1;
+  }
+  if (content.find("[") == std::string::npos || content.find("]") == std::string::npos) {
+    return -1;
+  }
+  return 0;
+}
 } // namespace
 
 int main(int argc, char **argv) {
   const char *db_path = kDefaultDbPath;
   const char *xlsx_path = kDefaultXlsxPath;
+  const char *mode = "xlsx";
+  const char *source = "sqlite";
   if (argc >= 2 && argv[1] != nullptr && argv[1][0] != '\0') {
     db_path = argv[1];
   }
   if (argc >= 3 && argv[2] != nullptr && argv[2][0] != '\0') {
     xlsx_path = argv[2];
   }
+  if (argc >= 4 && argv[3] != nullptr && argv[3][0] != '\0') {
+    mode = argv[3];
+  }
+  if (argc >= 5 && argv[4] != nullptr && argv[4][0] != '\0') {
+    source = argv[4];
+  }
 
-  if (create_seed_sqlite_db(db_path, kSeedRowCount) != 0) {
-    fprintf(stderr, "[testExport] failed to create sqlite seed db.\n");
-    return 1;
+  if (strcmp(mode, "all") != 0) {
+    if (argc < 2 && strcmp(source, "duckdb") == 0) {
+      db_path = kDefaultDuckDbPath;
+    }
+
+    if (strcmp(source, "sqlite") == 0) {
+      if (create_seed_sqlite_db(db_path, kSeedRowCount) != 0) {
+        fprintf(stderr, "[testExport] failed to create sqlite seed db.\n");
+        return 1;
+      }
+    } else if (strcmp(source, "duckdb") == 0) {
+      if (create_seed_duckdb_db(db_path, kSeedRowCount) != 0) {
+        fprintf(stderr, "[testExport] failed to create duckdb seed db.\n");
+        return 1;
+      }
+    } else {
+      fprintf(stderr, "[testExport] unknown source: %s (use sqlite|duckdb)\n", source);
+      return 6;
+    }
+  } else {
+    if (create_seed_sqlite_db(kDefaultDbPath, kSeedRowCount) != 0) {
+      fprintf(stderr, "[testExport] failed to create sqlite seed db.\n");
+      return 1;
+    }
+    if (create_seed_duckdb_db(kDefaultDuckDbPath, kSeedRowCount) != 0) {
+      fprintf(stderr, "[testExport] failed to create duckdb seed db.\n");
+      return 1;
+    }
   }
   if (cxlsx_init(kTestLicenseKey) != 0 || cxlsx_license_active() != 1) {
     fprintf(stderr, "[testExport] license activation failed.\n");
@@ -126,13 +260,84 @@ int main(int argc, char **argv) {
   };
 
   CWvExportOptions opt;
-  opt.source_type = CWvDataSourceType::Sqlite;
+  opt.source_type = (strcmp(source, "duckdb") == 0) ? CWvDataSourceType::DuckDb
+                                                     : CWvDataSourceType::Sqlite;
   opt.export_format = CWvExportFormat::Xlsx;
   opt.table_name = "sample_data";
   opt.sheet_name = "ExportData";
   opt.output_path = xlsx_path;
   opt.include_header = true;
   opt.enforce_source_index = true;
+  if (strcmp(mode, "all") == 0) {
+    struct ExportCase {
+      CWvDataSourceType source_type;
+      CWvExportFormat format;
+      CWvJsonBackend json_backend;
+      const char *db;
+      const char *out;
+      const char *label;
+    };
+    const ExportCase cases[] = {
+        {CWvDataSourceType::Sqlite, CWvExportFormat::Xlsx, CWvJsonBackend::RapidJson,
+         kDefaultDbPath,
+         "out_test/all_sqlite.xlsx", "sqlite+xlsx"},
+        {CWvDataSourceType::Sqlite, CWvExportFormat::Json, CWvJsonBackend::RapidJson,
+         kDefaultDbPath,
+         "out_test/all_sqlite.json", "sqlite+json-rapid"},
+        {CWvDataSourceType::Sqlite, CWvExportFormat::Json, CWvJsonBackend::YyJson,
+         kDefaultDbPath,
+         "out_test/all_sqlite_yy.json", "sqlite+json-yy"},
+        {CWvDataSourceType::DuckDb, CWvExportFormat::Xlsx, CWvJsonBackend::RapidJson,
+         kDefaultDuckDbPath,
+         "out_test/all_duckdb.xlsx", "duckdb+xlsx"},
+        {CWvDataSourceType::DuckDb, CWvExportFormat::Json, CWvJsonBackend::RapidJson,
+         kDefaultDuckDbPath,
+         "out_test/all_duckdb.json", "duckdb+json-rapid"},
+        {CWvDataSourceType::DuckDb, CWvExportFormat::Json, CWvJsonBackend::YyJson,
+         kDefaultDuckDbPath,
+         "out_test/all_duckdb_yy.json", "duckdb+json-yy"},
+    };
+
+    for (const auto &c : cases) {
+      CWvExportOptions case_opt = opt;
+      case_opt.source_type = c.source_type;
+      case_opt.export_format = c.format;
+      case_opt.output_path = c.out;
+      case_opt.json_backend = c.json_backend;
+
+      CWvExport exporter;
+      CWvExportResult res;
+      if (!exporter.Export(c.db, mapping, case_opt, &res)) {
+        fprintf(stderr, "[testExport] %s export failed: %s\n", c.label,
+                exporter.GetLastError().c_str());
+        return 3;
+      }
+
+      int ok = 0;
+      if (c.format == CWvExportFormat::Xlsx) {
+        ok = verify_exported_xlsx(res.output_path.c_str(), kSeedRowCount);
+      } else {
+        ok = verify_exported_json(res.output_path.c_str());
+      }
+      if (ok != 0) {
+        fprintf(stderr, "[testExport] %s verify failed.\n", c.label);
+        return 4;
+      }
+      printf("[testExport] %s passed -> %s\n", c.label, res.output_path.c_str());
+    }
+    printf("[testExport] all 6 cases passed.\n");
+    return 0;
+  } else if (strcmp(mode, "json-rapid") == 0) {
+    opt.export_format = CWvExportFormat::Json;
+    opt.json_backend = CWvJsonBackend::RapidJson;
+  } else if (strcmp(mode, "json-yy") == 0) {
+    opt.export_format = CWvExportFormat::Json;
+    opt.json_backend = CWvJsonBackend::YyJson;
+  } else if (strcmp(mode, "xlsx") != 0) {
+    fprintf(stderr, "[testExport] unknown mode: %s (use xlsx|json-rapid|json-yy|all)\n",
+            mode);
+    return 5;
+  }
 
   CWvExport exporter;
   CWvExportResult res;
@@ -143,9 +348,16 @@ int main(int argc, char **argv) {
   }
   printf("[testExport] exported rows=%d cols=%d file=%s\n", res.rows_exported,
          res.columns_exported, res.output_path.c_str());
-  if (verify_exported_xlsx(res.output_path.c_str(), kSeedRowCount) != 0) {
-    fprintf(stderr, "[testExport] verify failed.\n");
-    return 4;
+  if (opt.export_format == CWvExportFormat::Xlsx) {
+    if (verify_exported_xlsx(res.output_path.c_str(), kSeedRowCount) != 0) {
+      fprintf(stderr, "[testExport] verify failed.\n");
+      return 4;
+    }
+  } else {
+    if (verify_exported_json(res.output_path.c_str()) != 0) {
+      fprintf(stderr, "[testExport] verify failed.\n");
+      return 4;
+    }
   }
   printf("[testExport] verify passed.\n");
   return 0;

@@ -172,8 +172,8 @@
       <CompileAs>Default</CompileAs>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>libcrypto.lib;sqlite3.lib;CWvXlib.lib;ws2_32.lib;crypt32.lib;advapi32.lib;user32.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\$(Platform)\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>libcrypto.lib;sqlite3.lib;duckdb.lib;CWvXlib.lib;ws2_32.lib;crypt32.lib;advapi32.lib;user32.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\$(Platform)\;$(SolutionDir)vendor\duckdb-bin\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Console</SubSystem>
     </Link>
@@ -194,8 +194,8 @@
       <CompileAs>Default</CompileAs>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>libcrypto.lib;sqlite3.lib;CWvXlib.lib;ws2_32.lib;crypt32.lib;advapi32.lib;user32.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\$(Platform)\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>libcrypto.lib;sqlite3.lib;duckdb.lib;CWvXlib.lib;ws2_32.lib;crypt32.lib;advapi32.lib;user32.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\$(Platform)\;$(SolutionDir)vendor\duckdb-bin\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>false</GenerateDebugInformation>
@@ -218,8 +218,8 @@
       <CompileAs>Default</CompileAs>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>libcrypto.lib;sqlite3.lib;CWvXlib.lib;ws2_32.lib;crypt32.lib;advapi32.lib;user32.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\$(Platform)\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>libcrypto.lib;sqlite3.lib;duckdb.lib;CWvXlib.lib;ws2_32.lib;crypt32.lib;advapi32.lib;user32.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\$(Platform)\;$(SolutionDir)vendor\duckdb-bin\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -241,8 +241,8 @@
       <CompileAs>Default</CompileAs>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>libcrypto.lib;sqlite3.lib;CWvXlib-static.lib;ws2_32.lib;crypt32.lib;advapi32.lib;user32.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\$(Platform)\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>libcrypto.lib;sqlite3.lib;duckdb.lib;CWvXlib-static.lib;ws2_32.lib;crypt32.lib;advapi32.lib;user32.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\$(Platform)\;$(SolutionDir)vendor\duckdb-bin\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Console</SubSystem>
     </Link>
@@ -263,8 +263,8 @@
       <CompileAs>Default</CompileAs>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>libcrypto.lib;sqlite3.lib;CWvXlib-static.lib;ws2_32.lib;crypt32.lib;advapi32.lib;user32.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\$(Platform)\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>libcrypto.lib;sqlite3.lib;duckdb.lib;CWvXlib-static.lib;ws2_32.lib;crypt32.lib;advapi32.lib;user32.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\$(Platform)\;$(SolutionDir)vendor\duckdb-bin\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>false</GenerateDebugInformation>
@@ -287,8 +287,8 @@
       <CompileAs>Default</CompileAs>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>libcrypto.lib;sqlite3.lib;CWvXlib-static.lib;ws2_32.lib;crypt32.lib;advapi32.lib;user32.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\$(Platform)\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>libcrypto.lib;sqlite3.lib;duckdb.lib;CWvXlib-static.lib;ws2_32.lib;crypt32.lib;advapi32.lib;user32.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\$(Platform)\;$(SolutionDir)vendor\duckdb-bin\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -303,7 +303,16 @@
     <ClCompile Include="providers\SqliteProvider.cpp">
       <CompileAs>Default</CompileAs>
     </ClCompile>
+    <ClCompile Include="providers\DuckDbProvider.cpp">
+      <CompileAs>Default</CompileAs>
+    </ClCompile>
     <ClCompile Include="testExportMain.cpp">
+      <CompileAs>Default</CompileAs>
+    </ClCompile>
+    <ClCompile Include="writers\JsonWriterRapid.cpp">
+      <CompileAs>Default</CompileAs>
+    </ClCompile>
+    <ClCompile Include="writers\JsonWriterYy.cpp">
       <CompileAs>Default</CompileAs>
     </ClCompile>
     <ClCompile Include="writers\XlsxWriter.cpp">

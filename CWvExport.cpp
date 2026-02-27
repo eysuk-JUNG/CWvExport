@@ -1,9 +1,12 @@
 #include "CWvExport.h"
 
 #include "core/ExportCoreTypes.h"
+#include "providers/DuckDbProvider.h"
 #include "providers/IDataSourceProvider.h"
 #include "providers/SqliteProvider.h"
 #include "writers/IExportWriter.h"
+#include "writers/JsonWriterRapid.h"
+#include "writers/JsonWriterYy.h"
 #include "writers/XlsxWriter.h"
 
 #include <algorithm>
@@ -48,6 +51,10 @@ bool prepare_output_path(const std::string &raw, CWvExportFormat format,
 
   if (format == CWvExportFormat::Xlsx && out_path.extension().empty()) {
     out_path.replace_extension(".xlsx");
+  } else if (format == CWvExportFormat::Csv && out_path.extension().empty()) {
+    out_path.replace_extension(".csv");
+  } else if (format == CWvExportFormat::Json && out_path.extension().empty()) {
+    out_path.replace_extension(".json");
   }
 
   std::error_code ec;
@@ -204,6 +211,41 @@ bool resolve_columns(const std::vector<DbColumnInfo> &table_cols,
                    });
   return true;
 }
+
+std::unique_ptr<IExportWriter> make_writer(const CWvExportOptions &options,
+                                           std::string *err) {
+  if (options.export_format == CWvExportFormat::Xlsx) {
+    return std::make_unique<XlsxWriter>();
+  }
+  if (options.export_format == CWvExportFormat::Json) {
+    if (options.json_backend == CWvJsonBackend::RapidJson) {
+      return std::make_unique<JsonWriterRapid>();
+    }
+    if (options.json_backend == CWvJsonBackend::YyJson) {
+      return std::make_unique<JsonWriterYy>();
+    }
+    *err = "json backend is not supported.";
+    return nullptr;
+  }
+  if (options.export_format == CWvExportFormat::Csv) {
+    *err = "export_format Csv is not implemented yet.";
+    return nullptr;
+  }
+  *err = "export_format is not supported.";
+  return nullptr;
+}
+
+std::unique_ptr<IDataSourceProvider> make_provider(CWvDataSourceType source_type,
+                                                   std::string *err) {
+  if (source_type == CWvDataSourceType::Sqlite) {
+    return std::make_unique<SqliteProvider>();
+  }
+  if (source_type == CWvDataSourceType::DuckDb) {
+    return std::make_unique<DuckDbProvider>();
+  }
+  *err = "source_type is not implemented yet. Current implementation: Sqlite, DuckDb.";
+  return nullptr;
+}
 } // namespace
 
 bool CWvExport::Export(const std::string &source_path,
@@ -239,14 +281,10 @@ bool CWvExport::Export(const std::string &source_path,
     return false;
   }
 
-  if (options.source_type != CWvDataSourceType::Sqlite) {
+  if (options.export_format != CWvExportFormat::Xlsx &&
+      options.export_format != CWvExportFormat::Json) {
     last_error_ =
-        "source_type is not implemented yet. Current implementation: Sqlite only.";
-    return false;
-  }
-  if (options.export_format != CWvExportFormat::Xlsx) {
-    last_error_ =
-        "export_format is not implemented yet. Current implementation: Xlsx only.";
+        "export_format is not implemented yet. Current implementation: Xlsx, Json.";
     return false;
   }
 
@@ -259,9 +297,17 @@ bool CWvExport::Export(const std::string &source_path,
   const std::string temp_path = make_unique_temp_path(final_path);
   runtime_opt.output_path = temp_path;
 
-  std::unique_ptr<IDataSourceProvider> provider = std::make_unique<SqliteProvider>();
-  std::unique_ptr<IExportWriter> writer = std::make_unique<XlsxWriter>();
   std::string err;
+  std::unique_ptr<IDataSourceProvider> provider = make_provider(runtime_opt.source_type, &err);
+  if (!provider) {
+    last_error_ = err;
+    return false;
+  }
+  std::unique_ptr<IExportWriter> writer = make_writer(runtime_opt, &err);
+  if (!writer) {
+    last_error_ = err;
+    return false;
+  }
   std::vector<DbColumnInfo> table_cols;
   std::vector<ResolvedColumn> resolved;
   std::string resolve_warn;
@@ -342,6 +388,36 @@ bool CWvExport::ExportSqliteToXlsx(const std::string &sqlite_path,
   forced.source_type = CWvDataSourceType::Sqlite;
   forced.export_format = CWvExportFormat::Xlsx;
   return Export(sqlite_path, mapping, forced, result);
+}
+
+bool CWvExport::ExportSqliteToJson(const std::string &sqlite_path,
+                                   const std::vector<CWvExportColumn> &mapping,
+                                   const CWvExportOptions &options,
+                                   CWvExportResult *result) {
+  CWvExportOptions forced = options;
+  forced.source_type = CWvDataSourceType::Sqlite;
+  forced.export_format = CWvExportFormat::Json;
+  return Export(sqlite_path, mapping, forced, result);
+}
+
+bool CWvExport::ExportDuckDbToXlsx(const std::string &duckdb_path,
+                                   const std::vector<CWvExportColumn> &mapping,
+                                   const CWvExportOptions &options,
+                                   CWvExportResult *result) {
+  CWvExportOptions forced = options;
+  forced.source_type = CWvDataSourceType::DuckDb;
+  forced.export_format = CWvExportFormat::Xlsx;
+  return Export(duckdb_path, mapping, forced, result);
+}
+
+bool CWvExport::ExportDuckDbToJson(const std::string &duckdb_path,
+                                   const std::vector<CWvExportColumn> &mapping,
+                                   const CWvExportOptions &options,
+                                   CWvExportResult *result) {
+  CWvExportOptions forced = options;
+  forced.source_type = CWvDataSourceType::DuckDb;
+  forced.export_format = CWvExportFormat::Json;
+  return Export(duckdb_path, mapping, forced, result);
 }
 
 const std::string &CWvExport::GetLastError() const { return last_error_; }

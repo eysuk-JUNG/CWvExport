@@ -15,7 +15,13 @@ enum class CWvDataSourceType {
 enum class CWvExportFormat {
   Xlsx = 0,
   Csv = 1,
-  Other = 2
+  Json = 2,
+  Other = 3
+};
+
+enum class CWvJsonBackend {
+  RapidJson = 0,
+  YyJson = 1
 };
 
 struct CWvExportColumn {
@@ -37,6 +43,7 @@ struct CWvExportOptions {
   bool include_header = true;
   bool enforce_source_index = false;
   bool large_integer_as_text = true;
+  CWvJsonBackend json_backend = CWvJsonBackend::RapidJson;
 };
 
 struct CWvExportResult {
@@ -52,6 +59,18 @@ public:
               const CWvExportOptions &options,
               CWvExportResult *result = nullptr);
   bool ExportSqliteToXlsx(const std::string &sqlite_path,
+                          const std::vector<CWvExportColumn> &mapping,
+                          const CWvExportOptions &options,
+                          CWvExportResult *result = nullptr);
+  bool ExportSqliteToJson(const std::string &sqlite_path,
+                          const std::vector<CWvExportColumn> &mapping,
+                          const CWvExportOptions &options,
+                          CWvExportResult *result = nullptr);
+  bool ExportDuckDbToXlsx(const std::string &duckdb_path,
+                          const std::vector<CWvExportColumn> &mapping,
+                          const CWvExportOptions &options,
+                          CWvExportResult *result = nullptr);
+  bool ExportDuckDbToJson(const std::string &duckdb_path,
                           const std::vector<CWvExportColumn> &mapping,
                           const CWvExportOptions &options,
                           CWvExportResult *result = nullptr);
