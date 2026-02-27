@@ -5,11 +5,15 @@
 #include "../vendor/duckdb-bin/duckdb.h"
 #include <sqlite3.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <chrono>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -17,6 +21,7 @@ constexpr const char *kDefaultDbPath = "test_export_cache.db";
 constexpr const char *kDefaultDuckDbPath = "test_export_cache.duckdb";
 constexpr const char *kDefaultXlsxPath = "test_export_result.xlsx";
 constexpr int kSeedRowCount = 10000;
+constexpr int kCancelSeedRowCount = 300000;
 const char *kTestLicenseKey =
     "VEVTVC1VU0VSADIwOTktMTItMzEAEL3Siqtci7iNq5i3b6OLcDfLb0jTwOpUr148vD"
     "NQkRCqlqFh0udB635MvlpP6QWmjXM/cpJkG+zCeESDlxjyvSbEUHdgfsnTgHaiidrI"
@@ -198,6 +203,104 @@ int verify_exported_json(const char *json_path) {
   }
   return 0;
 }
+
+std::vector<std::string> find_part_files(const std::string &base_out) {
+  std::vector<std::string> parts;
+  const std::filesystem::path p(base_out);
+  const std::string prefix = p.stem().string() + ".part";
+  const std::string ext = p.extension().string();
+  const std::filesystem::path dir =
+      p.parent_path().empty() ? std::filesystem::path(".") : p.parent_path();
+  std::error_code ec;
+  if (!std::filesystem::exists(dir, ec)) {
+    return parts;
+  }
+  for (const auto &e : std::filesystem::directory_iterator(dir, ec)) {
+    if (ec || !e.is_regular_file()) {
+      continue;
+    }
+    const std::filesystem::path f = e.path();
+    if (f.extension().string() != ext) {
+      continue;
+    }
+    const std::string name = f.stem().string();
+    if (name.rfind(prefix, 0) == 0) {
+      parts.push_back(f.string());
+    }
+  }
+  std::sort(parts.begin(), parts.end());
+  return parts;
+}
+
+void remove_part_files(const std::string &base_out) {
+  std::error_code ec;
+  auto parts = find_part_files(base_out);
+  for (const auto &p : parts) {
+    std::filesystem::remove(p, ec);
+  }
+}
+
+int run_cancel_export_test(const char *db_path, CWvDataSourceType source_type,
+                           const std::vector<CWvExportColumn> &mapping,
+                           CWvCancelPolicy policy, const char *label) {
+  const std::string out = "out_test/cancel_test.json";
+  std::error_code ec;
+  std::filesystem::remove(out, ec);
+  remove_part_files(out);
+
+  CWvExportOptions opt;
+  opt.source_type = source_type;
+  opt.export_format = CWvExportFormat::Json;
+  opt.json_backend = CWvJsonBackend::RapidJson;
+  opt.table_name = "sample_data";
+  opt.output_path = out;
+  opt.include_header = true;
+  opt.enforce_source_index = true;
+  opt.max_rows_per_file = 1000;
+  opt.cancel_policy = policy;
+
+  CWvExport exporter;
+  CWvExportResult res;
+  bool ok = false;
+
+  std::thread worker([&]() { ok = exporter.Export(db_path, mapping, opt, &res); });
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  while (find_part_files(out).empty() && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  exporter.RequestCancel();
+  worker.join();
+
+  if (ok) {
+    fprintf(stderr, "[testExport] cancel test failed: export succeeded unexpectedly.\n");
+    return 7;
+  }
+  if (exporter.GetLastError().find("canceled") == std::string::npos) {
+    fprintf(stderr, "[testExport] cancel test failed: unexpected error: %s\n",
+            exporter.GetLastError().c_str());
+    return 8;
+  }
+  const auto parts = find_part_files(out);
+  if (policy == CWvCancelPolicy::KeepPartial) {
+    if (parts.empty()) {
+      fprintf(stderr, "[testExport] cancel(%s) failed: expected partial part files.\n", label);
+      return 9;
+    }
+  } else {
+    if (!parts.empty()) {
+      fprintf(stderr, "[testExport] cancel(%s) failed: expected no part files after cleanup.\n",
+              label);
+      return 10;
+    }
+  }
+  if (std::filesystem::exists(out)) {
+    fprintf(stderr, "[testExport] cancel(%s) failed: base output unexpectedly exists: %s\n",
+            label, out.c_str());
+    return 9;
+  }
+  printf("[testExport] cancel test passed (%s).\n", label);
+  return 0;
+}
 } // namespace
 
 int main(int argc, char **argv) {
@@ -238,6 +341,12 @@ int main(int argc, char **argv) {
       return 6;
     }
   } else {
+    std::error_code ec;
+    std::filesystem::remove(kDefaultDbPath, ec);
+    std::filesystem::remove(std::string(kDefaultDbPath) + "-shm", ec);
+    std::filesystem::remove(std::string(kDefaultDbPath) + "-wal", ec);
+    std::filesystem::remove(kDefaultDuckDbPath, ec);
+
     if (create_seed_sqlite_db(kDefaultDbPath, kSeedRowCount) != 0) {
       fprintf(stderr, "[testExport] failed to create sqlite seed db.\n");
       return 1;
@@ -327,6 +436,38 @@ int main(int argc, char **argv) {
     }
     printf("[testExport] all 6 cases passed.\n");
     return 0;
+  } else if (strcmp(mode, "cancel") == 0) {
+    int rc = 0;
+    if (strcmp(source, "sqlite") == 0) {
+      if (create_seed_sqlite_db(db_path, kCancelSeedRowCount) != 0) {
+        fprintf(stderr, "[testExport] failed to create sqlite seed db for cancel test.\n");
+        return 1;
+      }
+      rc = run_cancel_export_test(db_path, CWvDataSourceType::Sqlite, mapping,
+                                  CWvCancelPolicy::KeepPartial, "keep");
+      if (rc != 0) {
+        return rc;
+      }
+      rc = run_cancel_export_test(db_path, CWvDataSourceType::Sqlite, mapping,
+                                  CWvCancelPolicy::DeletePartial, "delete");
+      return rc;
+    }
+    if (strcmp(source, "duckdb") == 0) {
+      if (create_seed_duckdb_db(db_path, kCancelSeedRowCount) != 0) {
+        fprintf(stderr, "[testExport] failed to create duckdb seed db for cancel test.\n");
+        return 1;
+      }
+      rc = run_cancel_export_test(db_path, CWvDataSourceType::DuckDb, mapping,
+                                  CWvCancelPolicy::KeepPartial, "keep");
+      if (rc != 0) {
+        return rc;
+      }
+      rc = run_cancel_export_test(db_path, CWvDataSourceType::DuckDb, mapping,
+                                  CWvCancelPolicy::DeletePartial, "delete");
+      return rc;
+    }
+    fprintf(stderr, "[testExport] unknown source: %s (use sqlite|duckdb)\n", source);
+    return 6;
   } else if (strcmp(mode, "json-rapid") == 0) {
     opt.export_format = CWvExportFormat::Json;
     opt.json_backend = CWvJsonBackend::RapidJson;
@@ -334,7 +475,7 @@ int main(int argc, char **argv) {
     opt.export_format = CWvExportFormat::Json;
     opt.json_backend = CWvJsonBackend::YyJson;
   } else if (strcmp(mode, "xlsx") != 0) {
-    fprintf(stderr, "[testExport] unknown mode: %s (use xlsx|json-rapid|json-yy|all)\n",
+    fprintf(stderr, "[testExport] unknown mode: %s (use xlsx|json-rapid|json-yy|all|cancel)\n",
             mode);
     return 5;
   }

@@ -5,6 +5,9 @@
 
 #include <string>
 #include <vector>
+#include <atomic>
+
+class IDataSourceProvider;
 
 enum class CWvDataSourceType {
   Sqlite = 0,
@@ -22,6 +25,11 @@ enum class CWvExportFormat {
 enum class CWvJsonBackend {
   RapidJson = 0,
   YyJson = 1
+};
+
+enum class CWvCancelPolicy {
+  KeepPartial = 0,
+  DeletePartial = 1
 };
 
 struct CWvExportColumn {
@@ -44,16 +52,27 @@ struct CWvExportOptions {
   bool enforce_source_index = false;
   bool large_integer_as_text = true;
   CWvJsonBackend json_backend = CWvJsonBackend::RapidJson;
+  int max_rows_per_file = 0; // 0: disabled
+  CWvCancelPolicy cancel_policy = CWvCancelPolicy::KeepPartial;
+  /*
+   * Scalability note:
+   * - Xlsx writer supports automatic sheet split for large row counts.
+   * - Json writer should apply the same large-data policy via file split/rotation.
+   */
 };
 
 struct CWvExportResult {
   int rows_exported = 0;
   int columns_exported = 0;
   std::string output_path;
+  std::vector<std::string> output_paths;
 };
 
 class CWvExport {
 public:
+  void RequestCancel();
+  bool IsCancelRequested() const;
+
   bool Export(const std::string &source_path,
               const std::vector<CWvExportColumn> &mapping,
               const CWvExportOptions &options,
@@ -86,6 +105,8 @@ private:
   };
 
   JobState state_ = JobState::Created;
+  std::atomic<bool> cancel_requested_{false};
+  std::atomic<IDataSourceProvider *> active_provider_{nullptr};
   std::string last_error_;
   std::string last_warning_;
 };

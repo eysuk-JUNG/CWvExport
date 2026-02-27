@@ -9,6 +9,7 @@
 class IDataSourceProvider {
 public:
   virtual ~IDataSourceProvider() = default;
+  virtual void RequestCancel() {}
   virtual bool OpenReadOnly(const std::string &path, std::string *err) = 0;
   virtual bool LoadTableSchema(const std::string &table_name,
                                std::vector<DbColumnInfo> *cols,

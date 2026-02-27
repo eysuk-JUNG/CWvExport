@@ -91,6 +91,19 @@ std::string make_unique_temp_path(const std::string &final_path) {
          "." + std::to_string(tick) + "." + std::to_string(seq);
 }
 
+std::string make_part_output_path(const std::string &base_path, int part_index,
+                                  bool split_enabled) {
+  if (!split_enabled) {
+    return base_path;
+  }
+  std::filesystem::path p(base_path);
+  const std::string stem = p.stem().string();
+  const std::string ext = p.extension().string();
+  char part_buf[32];
+  std::snprintf(part_buf, sizeof(part_buf), ".part%04d", part_index);
+  return (p.parent_path() / (stem + part_buf + ext)).string();
+}
+
 bool replace_file_safely(const std::string &from, const std::string &to,
                          std::string *err) {
   if (MoveFileExA(from.c_str(), to.c_str(),
@@ -267,6 +280,14 @@ bool CWvExport::Export(const std::string &source_path,
   if (result) {
     *result = CWvExportResult{};
   }
+  auto is_canceled = [this]() {
+    return cancel_requested_.load(std::memory_order_relaxed);
+  };
+
+  if (is_canceled()) {
+    last_error_ = "export canceled by user.";
+    return false;
+  }
 
   if (source_path.empty()) {
     last_error_ = "source_path is empty.";
@@ -294,20 +315,18 @@ bool CWvExport::Export(const std::string &source_path,
                            &final_path, &last_error_)) {
     return false;
   }
-  const std::string temp_path = make_unique_temp_path(final_path);
-  runtime_opt.output_path = temp_path;
-
   std::string err;
   std::unique_ptr<IDataSourceProvider> provider = make_provider(runtime_opt.source_type, &err);
   if (!provider) {
     last_error_ = err;
     return false;
   }
-  std::unique_ptr<IExportWriter> writer = make_writer(runtime_opt, &err);
-  if (!writer) {
-    last_error_ = err;
-    return false;
-  }
+  struct ActiveProviderGuard {
+    std::atomic<IDataSourceProvider *> *slot;
+    ~ActiveProviderGuard() { slot->store(nullptr, std::memory_order_release); }
+  } active_provider_guard{&active_provider_};
+  active_provider_.store(provider.get(), std::memory_order_release);
+
   std::vector<DbColumnInfo> table_cols;
   std::vector<ResolvedColumn> resolved;
   std::string resolve_warn;
@@ -328,56 +347,176 @@ bool CWvExport::Export(const std::string &source_path,
     last_error_ = err;
     return false;
   }
-  if (!writer->Begin(runtime_opt, resolved, &err)) {
-    last_error_ = err;
-    return false;
-  }
+  const bool split_enabled = runtime_opt.max_rows_per_file > 0;
+  int part_index = 1;
+  int row_index_in_file = 0;
+  int rows_in_current_file = 0;
+  int total_rows_exported = 0;
+  std::string current_final_path;
+  std::string current_temp_path;
+  std::vector<std::string> output_paths;
+  std::unique_ptr<IExportWriter> writer;
 
-  int row = 0;
-  if (runtime_opt.include_header) {
-    if (!writer->WriteHeader(resolved, &err)) {
-      last_error_ = err;
-      std::remove(temp_path.c_str());
+  auto cleanup_current_temp = [&writer, &current_temp_path]() {
+    writer.reset();
+    if (!current_temp_path.empty()) {
+      std::remove(current_temp_path.c_str());
+      current_temp_path.clear();
+    }
+  };
+  auto open_part = [&](int idx) -> bool {
+    current_final_path = make_part_output_path(final_path, idx, split_enabled);
+    current_temp_path = make_unique_temp_path(current_final_path);
+    runtime_opt.output_path = current_temp_path;
+
+    writer = make_writer(runtime_opt, &err);
+    if (!writer) {
       return false;
     }
-    row = 1;
+    if (!writer->Begin(runtime_opt, resolved, &err)) {
+      return false;
+    }
+    row_index_in_file = 0;
+    rows_in_current_file = 0;
+
+    if (runtime_opt.include_header) {
+      if (!writer->WriteHeader(resolved, &err)) {
+        return false;
+      }
+      row_index_in_file = 1;
+    }
+    return true;
+  };
+  auto close_part = [&](bool commit) -> bool {
+    if (!writer) {
+      return true;
+    }
+    if (!writer->End(&err)) {
+      return false;
+    }
+    writer.reset();
+
+    if (!commit) {
+      std::remove(current_temp_path.c_str());
+      current_temp_path.clear();
+      return true;
+    }
+    if (!replace_file_safely(current_temp_path, current_final_path, &last_error_)) {
+      std::remove(current_temp_path.c_str());
+      current_temp_path.clear();
+      return false;
+    }
+    output_paths.push_back(current_final_path);
+    current_temp_path.clear();
+    return true;
+  };
+  auto cleanup_committed_outputs = [&output_paths]() {
+    for (const auto &p : output_paths) {
+      std::remove(p.c_str());
+    }
+  };
+  auto cancel_and_finish = [&]() -> bool {
+    last_error_ = "export canceled by user.";
+    cleanup_current_temp();
+    if (runtime_opt.cancel_policy == CWvCancelPolicy::DeletePartial) {
+      cleanup_committed_outputs();
+      output_paths.clear();
+    }
+    if (result) {
+      result->rows_exported = total_rows_exported;
+      result->columns_exported = (int)resolved.size();
+      result->output_paths = output_paths;
+      result->output_path = output_paths.empty() ? "" : output_paths.front();
+    }
+    return false;
+  };
+
+  if (!open_part(part_index)) {
+    last_error_ = err;
+    cleanup_current_temp();
+    return false;
+  }
+  if (is_canceled()) {
+    return cancel_and_finish();
   }
 
   bool has_row = false;
   while (provider->Step(&has_row, &err) && has_row) {
-    for (int i = 0; i < (int)resolved.size(); ++i) {
-      if (!writer->WriteCell(row, i, provider->ValueType(i), provider->ValueInt64(i),
-                             provider->ValueDouble(i), provider->ValueText(i),
-                             provider->ValueBytes(i), &err)) {
+    if (is_canceled()) {
+      return cancel_and_finish();
+    }
+    if (split_enabled && rows_in_current_file >= runtime_opt.max_rows_per_file) {
+      if (!close_part(true)) {
+        if (last_error_.empty()) {
+          last_error_ = err.empty() ? "failed to close current export part." : err;
+        }
+        cleanup_current_temp();
+        return false;
+      }
+      ++part_index;
+      if (!open_part(part_index)) {
         last_error_ = err;
-        std::remove(temp_path.c_str());
+        cleanup_current_temp();
         return false;
       }
     }
-    ++row;
+
+    for (int i = 0; i < (int)resolved.size(); ++i) {
+      if (is_canceled()) {
+        return cancel_and_finish();
+      }
+      if (!writer->WriteCell(row_index_in_file, i, provider->ValueType(i),
+                             provider->ValueInt64(i), provider->ValueDouble(i),
+                             provider->ValueText(i), provider->ValueBytes(i), &err)) {
+        last_error_ = err;
+        cleanup_current_temp();
+        return false;
+      }
+    }
+    ++row_index_in_file;
+    ++rows_in_current_file;
+    ++total_rows_exported;
   }
   if (!err.empty()) {
+    if (is_canceled() || err.find("canceled") != std::string::npos ||
+        err.find("interrupted") != std::string::npos ||
+        err.find("Interrupted") != std::string::npos) {
+      return cancel_and_finish();
+    }
     last_error_ = err;
-    std::remove(temp_path.c_str());
+    cleanup_current_temp();
     return false;
   }
-  if (!writer->End(&err)) {
-    last_error_ = err;
-    std::remove(temp_path.c_str());
-    return false;
+  if (is_canceled()) {
+    return cancel_and_finish();
   }
-
-  if (!replace_file_safely(temp_path, final_path, &last_error_)) {
-    std::remove(temp_path.c_str());
+  if (!close_part(true)) {
+    if (last_error_.empty()) {
+      last_error_ = err.empty() ? "failed to close current export part." : err;
+    }
+    cleanup_current_temp();
     return false;
   }
 
   if (result) {
-    result->rows_exported = row - (runtime_opt.include_header ? 1 : 0);
+    result->rows_exported = total_rows_exported;
     result->columns_exported = (int)resolved.size();
-    result->output_path = final_path;
+    result->output_paths = output_paths;
+    result->output_path = output_paths.empty() ? "" : output_paths.front();
   }
   return true;
+}
+
+void CWvExport::RequestCancel() {
+  cancel_requested_.store(true, std::memory_order_relaxed);
+  IDataSourceProvider *active = active_provider_.load(std::memory_order_acquire);
+  if (active != nullptr) {
+    active->RequestCancel();
+  }
+}
+
+bool CWvExport::IsCancelRequested() const {
+  return cancel_requested_.load(std::memory_order_relaxed);
 }
 
 bool CWvExport::ExportSqliteToXlsx(const std::string &sqlite_path,

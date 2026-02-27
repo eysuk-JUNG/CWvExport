@@ -9,6 +9,7 @@ class SqliteProvider final : public IDataSourceProvider {
 public:
   ~SqliteProvider() override;
 
+  void RequestCancel() override;
   bool OpenReadOnly(const std::string &path, std::string *err) override;
   bool LoadTableSchema(const std::string &table_name,
                        std::vector<DbColumnInfo> *cols,
