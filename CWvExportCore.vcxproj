@@ -53,8 +53,8 @@
 
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
-    <ProjectGuid>{C7E2A1B5-1234-4FA1-9F5A-43F58A8B72A1}</ProjectGuid>
-    <RootNamespace>testExport</RootNamespace>
+    <ProjectGuid>{5FD454D6-70B5-47D2-8D5A-112C52CA3E11}</ProjectGuid>
+    <RootNamespace>CWvExportCore</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
     <Keyword>Win32Proj</Keyword>
   </PropertyGroup>
@@ -62,80 +62,80 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>NotSet</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>NotSet</CharacterSet>
     <WholeProgramOptimization>true</WholeProgramOptimization>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseWithDebugInfo|Win32'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>NotSet</CharacterSet>
     <WholeProgramOptimization>true</WholeProgramOptimization>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>NotSet</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>NotSet</CharacterSet>
     <WholeProgramOptimization>true</WholeProgramOptimization>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseWithDebugInfo|x64'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>NotSet</CharacterSet>
     <WholeProgramOptimization>true</WholeProgramOptimization>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug-Static|Win32'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>NotSet</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release-Static|Win32'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>NotSet</CharacterSet>
     <WholeProgramOptimization>true</WholeProgramOptimization>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseWithDebugInfo-Static|Win32'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>NotSet</CharacterSet>
     <WholeProgramOptimization>true</WholeProgramOptimization>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug-Static|x64'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>NotSet</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release-Static|x64'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>NotSet</CharacterSet>
     <WholeProgramOptimization>true</WholeProgramOptimization>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseWithDebugInfo-Static|x64'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>NotSet</CharacterSet>
@@ -149,6 +149,7 @@
     <VcpkgTriplet Condition="'$(Platform)'=='Win32' and ('$(Configuration)'=='Debug' or '$(Configuration)'=='Release' or '$(Configuration)'=='ReleaseWithDebugInfo')">x86-windows</VcpkgTriplet>
     <VcpkgEnableManifest>true</VcpkgEnableManifest>
     <VcpkgManifestConfiguration>$(Configuration)</VcpkgManifestConfiguration>
+    <TargetName>CWvExportCore</TargetName>
   </PropertyGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
@@ -171,12 +172,6 @@
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <CompileAs>Default</CompileAs>
     </ClCompile>
-    <Link>
-      <AdditionalDependencies>libcrypto.lib;sqlite3.lib;duckdb.lib;CWvXlib.lib;ws2_32.lib;crypt32.lib;advapi32.lib;user32.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\$(Platform)\;$(SolutionDir)vendor\duckdb-bin\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
-      <SubSystem>Console</SubSystem>
-    </Link>
   </ItemDefinitionGroup>
 
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
@@ -193,14 +188,6 @@
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <CompileAs>Default</CompileAs>
     </ClCompile>
-    <Link>
-      <AdditionalDependencies>libcrypto.lib;sqlite3.lib;duckdb.lib;CWvXlib.lib;ws2_32.lib;crypt32.lib;advapi32.lib;user32.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\$(Platform)\;$(SolutionDir)vendor\duckdb-bin\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <EnableCOMDATFolding>true</EnableCOMDATFolding>
-      <OptimizeReferences>true</OptimizeReferences>
-      <GenerateDebugInformation>false</GenerateDebugInformation>
-      <SubSystem>Console</SubSystem>
-    </Link>
   </ItemDefinitionGroup>
 
   <ItemDefinitionGroup Condition="'$(Configuration)'=='ReleaseWithDebugInfo'">
@@ -217,14 +204,6 @@
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <CompileAs>Default</CompileAs>
     </ClCompile>
-    <Link>
-      <AdditionalDependencies>libcrypto.lib;sqlite3.lib;duckdb.lib;CWvXlib.lib;ws2_32.lib;crypt32.lib;advapi32.lib;user32.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\$(Platform)\;$(SolutionDir)vendor\duckdb-bin\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <EnableCOMDATFolding>true</EnableCOMDATFolding>
-      <OptimizeReferences>true</OptimizeReferences>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
-      <SubSystem>Console</SubSystem>
-    </Link>
   </ItemDefinitionGroup>
 
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug-Static'">
@@ -240,12 +219,6 @@
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <CompileAs>Default</CompileAs>
     </ClCompile>
-    <Link>
-      <AdditionalDependencies>libcrypto.lib;sqlite3.lib;duckdb.lib;CWvXlib-static.lib;ws2_32.lib;crypt32.lib;advapi32.lib;user32.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\$(Platform)\;$(SolutionDir)vendor\duckdb-bin\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
-      <SubSystem>Console</SubSystem>
-    </Link>
   </ItemDefinitionGroup>
 
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release-Static'">
@@ -262,14 +235,6 @@
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <CompileAs>Default</CompileAs>
     </ClCompile>
-    <Link>
-      <AdditionalDependencies>libcrypto.lib;sqlite3.lib;duckdb.lib;CWvXlib-static.lib;ws2_32.lib;crypt32.lib;advapi32.lib;user32.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\$(Platform)\;$(SolutionDir)vendor\duckdb-bin\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <EnableCOMDATFolding>true</EnableCOMDATFolding>
-      <OptimizeReferences>true</OptimizeReferences>
-      <GenerateDebugInformation>false</GenerateDebugInformation>
-      <SubSystem>Console</SubSystem>
-    </Link>
   </ItemDefinitionGroup>
 
   <ItemDefinitionGroup Condition="'$(Configuration)'=='ReleaseWithDebugInfo-Static'">
@@ -286,29 +251,36 @@
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <CompileAs>Default</CompileAs>
     </ClCompile>
-    <Link>
-      <AdditionalDependencies>libcrypto.lib;sqlite3.lib;duckdb.lib;CWvXlib-static.lib;ws2_32.lib;crypt32.lib;advapi32.lib;user32.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\$(Platform)\;$(SolutionDir)vendor\duckdb-bin\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <EnableCOMDATFolding>true</EnableCOMDATFolding>
-      <OptimizeReferences>true</OptimizeReferences>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
-      <SubSystem>Console</SubSystem>
-    </Link>
   </ItemDefinitionGroup>
 
   <ItemGroup>
-    <ClCompile Include="testExportMain.cpp">
+    <ClCompile Include="CWvExport.cpp">
       <CompileAs>Default</CompileAs>
     </ClCompile>
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="CWvExportCore.vcxproj">
-      <Project>{5FD454D6-70B5-47D2-8D5A-112C52CA3E11}</Project>
-    </ProjectReference>
-    <ProjectReference Include="..\CWvXlib\CWvXlib.vcxproj">
-      <Project>{A1B2C3D4-1111-2222-3333-444455556666}</Project>
-    </ProjectReference>
+    <ClCompile Include="..\vendor\yyjson\src\yyjson.c">
+      <CompileAs>CompileAsC</CompileAs>
+    </ClCompile>
+    <ClCompile Include="providers\SqliteProvider.cpp">
+      <CompileAs>Default</CompileAs>
+    </ClCompile>
+    <ClCompile Include="providers\DuckDbProvider.cpp">
+      <CompileAs>Default</CompileAs>
+    </ClCompile>
+    <ClCompile Include="writers\JsonWriterRapid.cpp">
+      <CompileAs>Default</CompileAs>
+    </ClCompile>
+    <ClCompile Include="writers\JsonWriterYy.cpp">
+      <CompileAs>Default</CompileAs>
+    </ClCompile>
+    <ClCompile Include="writers\clipboard\ClipboardBackend.cpp">
+      <CompileAs>Default</CompileAs>
+    </ClCompile>
+    <ClCompile Include="writers\ClipboardWriter.cpp">
+      <CompileAs>Default</CompileAs>
+    </ClCompile>
+    <ClCompile Include="writers\XlsxWriter.cpp">
+      <CompileAs>Default</CompileAs>
+    </ClCompile>
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
