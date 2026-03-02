@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include <atomic>
+#include <cstddef>
 #include <mutex>
 
 class IDataSourceProvider;
@@ -20,12 +21,17 @@ enum class CWvExportFormat {
   Xlsx = 0,
   Csv = 1,
   Json = 2,
-  Other = 3
+  Other = 3,
+  Clipboard = 4
 };
 
 enum class CWvJsonBackend {
   RapidJson = 0,
   YyJson = 1
+};
+
+enum class CWvClipboardFormat {
+  PlainText = 0
 };
 
 enum class CWvCancelPolicy {
@@ -53,6 +59,8 @@ struct CWvExportOptions {
   bool enforce_source_index = false;
   bool large_integer_as_text = true;
   CWvJsonBackend json_backend = CWvJsonBackend::RapidJson;
+  CWvClipboardFormat clipboard_format = CWvClipboardFormat::PlainText;
+  size_t max_clipboard_bytes = 16u * 1024u * 1024u;
   int max_rows_per_file = 0; // 0: disabled
   CWvCancelPolicy cancel_policy = CWvCancelPolicy::KeepPartial;
   /*

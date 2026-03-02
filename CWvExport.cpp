@@ -5,6 +5,7 @@
 #include "providers/IDataSourceProvider.h"
 #include "providers/SqliteProvider.h"
 #include "writers/IExportWriter.h"
+#include "writers/ClipboardWriter.h"
 #include "writers/JsonWriterRapid.h"
 #include "writers/JsonWriterYy.h"
 #include "writers/XlsxWriter.h"
@@ -230,6 +231,9 @@ std::unique_ptr<IExportWriter> make_writer(const CWvExportOptions &options,
   if (options.export_format == CWvExportFormat::Xlsx) {
     return std::make_unique<XlsxWriter>();
   }
+  if (options.export_format == CWvExportFormat::Clipboard) {
+    return std::make_unique<ClipboardWriter>();
+  }
   if (options.export_format == CWvExportFormat::Json) {
     if (options.json_backend == CWvJsonBackend::RapidJson) {
       return std::make_unique<JsonWriterRapid>();
@@ -293,7 +297,8 @@ bool CWvExport::Export(const std::string &source_path,
     last_error_ = "source_path is empty.";
     return false;
   }
-  if (options.output_path.empty()) {
+  const bool clipboard_mode = (options.export_format == CWvExportFormat::Clipboard);
+  if (!clipboard_mode && options.output_path.empty()) {
     last_error_ = "output_path is empty.";
     return false;
   }
@@ -303,17 +308,25 @@ bool CWvExport::Export(const std::string &source_path,
   }
 
   if (options.export_format != CWvExportFormat::Xlsx &&
-      options.export_format != CWvExportFormat::Json) {
+      options.export_format != CWvExportFormat::Json &&
+      options.export_format != CWvExportFormat::Clipboard) {
     last_error_ =
-        "export_format is not implemented yet. Current implementation: Xlsx, Json.";
+        "export_format is not implemented yet. Current implementation: Xlsx, Json, Clipboard.";
     return false;
   }
 
   CWvExportOptions runtime_opt = options;
   std::string final_path;
-  if (!prepare_output_path(options.output_path, runtime_opt.export_format,
-                           &final_path, &last_error_)) {
-    return false;
+  if (!clipboard_mode) {
+    if (!prepare_output_path(options.output_path, runtime_opt.export_format,
+                             &final_path, &last_error_)) {
+      return false;
+    }
+  } else {
+    if (runtime_opt.max_rows_per_file > 0) {
+      last_error_ = "clipboard export does not support max_rows_per_file split.";
+      return false;
+    }
   }
   std::string err;
   std::unique_ptr<IDataSourceProvider> provider = make_provider(runtime_opt.source_type, &err);
@@ -354,7 +367,7 @@ bool CWvExport::Export(const std::string &source_path,
     last_error_ = err;
     return false;
   }
-  const bool split_enabled = runtime_opt.max_rows_per_file > 0;
+  const bool split_enabled = (!clipboard_mode && runtime_opt.max_rows_per_file > 0);
   int part_index = 1;
   int row_index_in_file = 0;
   int rows_in_current_file = 0;
@@ -372,9 +385,15 @@ bool CWvExport::Export(const std::string &source_path,
     }
   };
   auto open_part = [&](int idx) -> bool {
-    current_final_path = make_part_output_path(final_path, idx, split_enabled);
-    current_temp_path = make_unique_temp_path(current_final_path);
-    runtime_opt.output_path = current_temp_path;
+    if (clipboard_mode) {
+      current_final_path.clear();
+      current_temp_path.clear();
+      runtime_opt.output_path.clear();
+    } else {
+      current_final_path = make_part_output_path(final_path, idx, split_enabled);
+      current_temp_path = make_unique_temp_path(current_final_path);
+      runtime_opt.output_path = current_temp_path;
+    }
 
     writer = make_writer(runtime_opt, &err);
     if (!writer) {
@@ -402,6 +421,10 @@ bool CWvExport::Export(const std::string &source_path,
       return false;
     }
     writer.reset();
+
+    if (clipboard_mode) {
+      return true;
+    }
 
     if (!commit) {
       std::remove(current_temp_path.c_str());
@@ -509,7 +532,11 @@ bool CWvExport::Export(const std::string &source_path,
     result->rows_exported = total_rows_exported;
     result->columns_exported = (int)resolved.size();
     result->output_paths = output_paths;
-    result->output_path = output_paths.empty() ? "" : output_paths.front();
+    if (clipboard_mode) {
+      result->output_path = "clipboard://plain-text";
+    } else {
+      result->output_path = output_paths.empty() ? "" : output_paths.front();
+    }
   }
   return true;
 }

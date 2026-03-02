@@ -318,6 +318,12 @@
     <ClCompile Include="writers\JsonWriterYy.cpp">
       <CompileAs>Default</CompileAs>
     </ClCompile>
+    <ClCompile Include="writers\clipboard\ClipboardBackend.cpp">
+      <CompileAs>Default</CompileAs>
+    </ClCompile>
+    <ClCompile Include="writers\ClipboardWriter.cpp">
+      <CompileAs>Default</CompileAs>
+    </ClCompile>
     <ClCompile Include="writers\XlsxWriter.cpp">
       <CompileAs>Default</CompileAs>
     </ClCompile>

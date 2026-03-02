@@ -474,8 +474,14 @@ int main(int argc, char **argv) {
   } else if (strcmp(mode, "json-yy") == 0) {
     opt.export_format = CWvExportFormat::Json;
     opt.json_backend = CWvJsonBackend::YyJson;
+  } else if (strcmp(mode, "clipboard") == 0) {
+    opt.export_format = CWvExportFormat::Clipboard;
+    opt.max_clipboard_bytes = 16u * 1024u * 1024u;
+  } else if (strcmp(mode, "clipboard-limit") == 0) {
+    opt.export_format = CWvExportFormat::Clipboard;
+    opt.max_clipboard_bytes = 256;
   } else if (strcmp(mode, "xlsx") != 0) {
-    fprintf(stderr, "[testExport] unknown mode: %s (use xlsx|json-rapid|json-yy|all|cancel)\n",
+    fprintf(stderr, "[testExport] unknown mode: %s (use xlsx|json-rapid|json-yy|clipboard|clipboard-limit|all|cancel)\n",
             mode);
     return 5;
   }
@@ -483,12 +489,25 @@ int main(int argc, char **argv) {
   CWvExport exporter;
   CWvExportResult res;
   if (!exporter.Export(db_path, mapping, opt, &res)) {
+    if (strcmp(mode, "clipboard-limit") == 0 &&
+        exporter.GetLastError().find("max_clipboard_bytes") != std::string::npos) {
+      printf("[testExport] clipboard-limit negative test passed.\n");
+      return 0;
+    }
     fprintf(stderr, "[testExport] export failed: %s\n",
             exporter.GetLastError().c_str());
     return 3;
   }
+  if (strcmp(mode, "clipboard-limit") == 0) {
+    fprintf(stderr, "[testExport] clipboard-limit expected failure but export succeeded.\n");
+    return 11;
+  }
   printf("[testExport] exported rows=%d cols=%d file=%s\n", res.rows_exported,
          res.columns_exported, res.output_path.c_str());
+  if (opt.export_format == CWvExportFormat::Clipboard) {
+    printf("[testExport] clipboard export passed.\n");
+    return 0;
+  }
   if (opt.export_format == CWvExportFormat::Xlsx) {
     if (verify_exported_xlsx(res.output_path.c_str(), kSeedRowCount) != 0) {
       fprintf(stderr, "[testExport] verify failed.\n");
