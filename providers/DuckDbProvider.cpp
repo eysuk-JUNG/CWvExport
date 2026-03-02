@@ -374,6 +374,11 @@ bool DuckDbProvider::Step(bool *has_row, std::string *err) {
 
     duckdb_data_chunk next_chunk = duckdb_fetch_chunk(result_);
     if (next_chunk == nullptr) {
+      const char *msg = duckdb_result_error(&result_);
+      if (msg != nullptr && msg[0] != '\0') {
+        *err = msg;
+        return false;
+      }
       *has_row = false;
       return true;
     }

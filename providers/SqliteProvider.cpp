@@ -42,6 +42,23 @@ std::string quote_qualified_identifier(const std::string &name) {
   }
   return out;
 }
+
+bool split_schema_and_table(const std::string &qualified_name, std::string *schema,
+                            std::string *table) {
+  const size_t dot = qualified_name.find('.');
+  if (dot == std::string::npos) {
+    schema->clear();
+    *table = qualified_name;
+    return !table->empty();
+  }
+  if (dot == 0 || dot + 1 >= qualified_name.size() ||
+      qualified_name.find('.', dot + 1) != std::string::npos) {
+    return false;
+  }
+  *schema = qualified_name.substr(0, dot);
+  *table = qualified_name.substr(dot + 1);
+  return true;
+}
 } // namespace
 
 SqliteProvider::~SqliteProvider() {
@@ -87,7 +104,19 @@ bool SqliteProvider::LoadTableSchema(const std::string &table_name,
                                      std::vector<DbColumnInfo> *cols,
                                      std::string *err) {
   sqlite3_stmt *s = nullptr;
-  std::string sql = "PRAGMA table_info(" + quote_qualified_identifier(table_name) + ");";
+  std::string schema_name;
+  std::string base_table_name;
+  if (!split_schema_and_table(table_name, &schema_name, &base_table_name)) {
+    *err = "invalid table_name format: " + table_name;
+    return false;
+  }
+  std::string sql;
+  if (schema_name.empty()) {
+    sql = "PRAGMA table_info(" + quote_identifier(base_table_name) + ");";
+  } else {
+    sql = "PRAGMA " + quote_identifier(schema_name) + ".table_info(" +
+          quote_identifier(base_table_name) + ");";
+  }
   int rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &s, nullptr);
   if (rc != SQLITE_OK) {
     *err = "PRAGMA table_info prepare failed: ";

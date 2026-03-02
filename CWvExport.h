@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include <atomic>
+#include <mutex>
 
 class IDataSourceProvider;
 
@@ -106,7 +107,8 @@ private:
 
   JobState state_ = JobState::Created;
   std::atomic<bool> cancel_requested_{false};
-  std::atomic<IDataSourceProvider *> active_provider_{nullptr};
+  mutable std::mutex active_provider_mu_;
+  IDataSourceProvider *active_provider_ = nullptr;
   std::string last_error_;
   std::string last_warning_;
 };

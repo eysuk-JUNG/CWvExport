@@ -322,10 +322,17 @@ bool CWvExport::Export(const std::string &source_path,
     return false;
   }
   struct ActiveProviderGuard {
-    std::atomic<IDataSourceProvider *> *slot;
-    ~ActiveProviderGuard() { slot->store(nullptr, std::memory_order_release); }
-  } active_provider_guard{&active_provider_};
-  active_provider_.store(provider.get(), std::memory_order_release);
+    std::mutex *mu;
+    IDataSourceProvider **slot;
+    ~ActiveProviderGuard() {
+      std::lock_guard<std::mutex> lock(*mu);
+      *slot = nullptr;
+    }
+  } active_provider_guard{&active_provider_mu_, &active_provider_};
+  {
+    std::lock_guard<std::mutex> lock(active_provider_mu_);
+    active_provider_ = provider.get();
+  }
 
   std::vector<DbColumnInfo> table_cols;
   std::vector<ResolvedColumn> resolved;
@@ -509,9 +516,9 @@ bool CWvExport::Export(const std::string &source_path,
 
 void CWvExport::RequestCancel() {
   cancel_requested_.store(true, std::memory_order_relaxed);
-  IDataSourceProvider *active = active_provider_.load(std::memory_order_acquire);
-  if (active != nullptr) {
-    active->RequestCancel();
+  std::lock_guard<std::mutex> lock(active_provider_mu_);
+  if (active_provider_ != nullptr) {
+    active_provider_->RequestCancel();
   }
 }
 
