@@ -227,7 +227,7 @@ bool CsvWriter::Utf8ToAnsi(const std::string &utf8, std::string *ansi_out) {
 
   const int ansi_len = WideCharToMultiByte(CP_ACP, 0, wide.data(), wide_len, nullptr, 0,
                                            nullptr, nullptr);
-  if (ansi_len < 0) {
+  if (ansi_len <= 0) {
     return false;
   }
   ansi_out->assign(static_cast<size_t>(ansi_len), '\0');

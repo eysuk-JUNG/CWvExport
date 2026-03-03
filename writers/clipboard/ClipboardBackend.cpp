@@ -17,7 +17,7 @@ public:
   bool SetPlainTextUtf8(const std::string &text, std::string *err) override {
     const int needed_wchars =
         MultiByteToWideChar(CP_UTF8, 0, text.c_str(), static_cast<int>(text.size()), nullptr, 0);
-    if (needed_wchars < 0) {
+    if (needed_wchars <= 0 && !text.empty()) {
       *err = "MultiByteToWideChar size query failed.";
       return false;
     }
@@ -90,23 +90,86 @@ public:
   }
 };
 #else
-bool run_clip_cmd(const char *cmd, const std::string &text, std::string *err) {
-  FILE *pipe = popen(cmd, "w");
-  if (pipe == nullptr) {
-    *err = std::string("failed to run clipboard command: ") + cmd;
+#include <unistd.h>
+#include <sys/wait.h>
+
+bool run_clip_cmd_argv(const std::vector<const char *> &argv, const std::string &text,
+                       std::string *err) {
+  if (argv.empty() || argv[0] == nullptr) {
+    *err = "invalid clipboard command.";
     return false;
   }
-  const size_t wrote = std::fwrite(text.data(), 1, text.size(), pipe);
-  const int close_rc = pclose(pipe);
-  if (wrote != text.size()) {
-    *err = std::string("failed writing clipboard input to command: ") + cmd;
+
+  int pipefd[2] = {-1, -1};
+  if (pipe(pipefd) != 0) {
+    *err = "pipe() failed for clipboard command.";
     return false;
   }
-  if (close_rc != 0) {
-    *err = std::string("clipboard command failed: ") + cmd;
+
+  const pid_t pid = fork();
+  if (pid < 0) {
+    close(pipefd[0]);
+    close(pipefd[1]);
+    *err = "fork() failed for clipboard command.";
+    return false;
+  }
+
+  if (pid == 0) {
+    close(pipefd[1]);
+    if (dup2(pipefd[0], STDIN_FILENO) < 0) {
+      _exit(127);
+    }
+    close(pipefd[0]);
+    execvp(argv[0], const_cast<char *const *>(argv.data()));
+    _exit(127);
+  }
+
+  close(pipefd[0]);
+  size_t offset = 0;
+  while (offset < text.size()) {
+    const ssize_t written = write(pipefd[1], text.data() + offset, text.size() - offset);
+    if (written <= 0) {
+      close(pipefd[1]);
+      int status = 0;
+      waitpid(pid, &status, 0);
+      *err = std::string("failed writing clipboard input to command: ") + argv[0];
+      return false;
+    }
+    offset += static_cast<size_t>(written);
+  }
+  close(pipefd[1]);
+
+  int status = 0;
+  if (waitpid(pid, &status, 0) < 0) {
+    *err = std::string("waitpid failed for clipboard command: ") + argv[0];
+    return false;
+  }
+  if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+    *err = std::string("clipboard command failed: ") + argv[0];
     return false;
   }
   return true;
+}
+
+bool run_clip_cmd(const char *cmd, const std::string &text, std::string *err) {
+  if (std::strcmp(cmd, "pbcopy") == 0) {
+    std::vector<const char *> argv = {"pbcopy", nullptr};
+    return run_clip_cmd_argv(argv, text, err);
+  }
+  if (std::strcmp(cmd, "wl-copy") == 0) {
+    std::vector<const char *> argv = {"wl-copy", nullptr};
+    return run_clip_cmd_argv(argv, text, err);
+  }
+  if (std::strcmp(cmd, "xclip -selection clipboard") == 0) {
+    std::vector<const char *> argv = {"xclip", "-selection", "clipboard", nullptr};
+    return run_clip_cmd_argv(argv, text, err);
+  }
+  if (std::strcmp(cmd, "xsel --clipboard --input") == 0) {
+    std::vector<const char *> argv = {"xsel", "--clipboard", "--input", nullptr};
+    return run_clip_cmd_argv(argv, text, err);
+  }
+  *err = std::string("unsupported clipboard command pattern: ") + cmd;
+  return false;
 }
 
 class ClipboardBackendPosix final : public IClipboardBackend {

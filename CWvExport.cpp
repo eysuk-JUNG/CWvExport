@@ -22,6 +22,9 @@
 #include <unordered_set>
 #include <vector>
 #include <windows.h>
+#include <rpc.h>
+
+#pragma comment(lib, "Rpcrt4.lib")
 
 namespace {
 std::string trim_ascii(const std::string &s) {
@@ -83,14 +86,33 @@ bool prepare_output_path(const std::string &raw, CWvExportFormat format,
 }
 
 std::string make_unique_temp_path(const std::string &final_path) {
+  for (int attempt = 0; attempt < 32; ++attempt) {
+    UUID uuid{};
+    const RPC_STATUS uuid_rc = UuidCreate(&uuid);
+    if (uuid_rc != RPC_S_OK && uuid_rc != RPC_S_UUID_LOCAL_ONLY) {
+      continue;
+    }
+
+    RPC_CSTR uuid_text = nullptr;
+    if (UuidToStringA(&uuid, &uuid_text) != RPC_S_OK || uuid_text == nullptr) {
+      continue;
+    }
+
+    const std::string candidate = final_path + ".tmp." + reinterpret_cast<const char *>(uuid_text);
+    RpcStringFreeA(&uuid_text);
+
+    const HANDLE h = CreateFileA(candidate.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr,
+                                 CREATE_NEW, FILE_ATTRIBUTE_TEMPORARY, nullptr);
+    if (h != INVALID_HANDLE_VALUE) {
+      CloseHandle(h);
+      return candidate;
+    }
+  }
+
   static volatile LONG s_temp_seq = 0;
-  const unsigned long pid = GetCurrentProcessId();
-  const unsigned long tid = GetCurrentThreadId();
   const unsigned long seq =
       static_cast<unsigned long>(InterlockedIncrement(&s_temp_seq));
-  const unsigned long long tick = GetTickCount64();
-  return final_path + ".tmp." + std::to_string(pid) + "." + std::to_string(tid) +
-         "." + std::to_string(tick) + "." + std::to_string(seq);
+  return final_path + ".tmp.fallback." + std::to_string(seq);
 }
 
 std::string make_part_output_path(const std::string &base_path, int part_index,
