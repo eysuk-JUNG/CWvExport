@@ -354,6 +354,11 @@ bool CWvExport::Export(const std::string &source_path,
       last_error_ = "clipboard export does not support max_rows_per_file split.";
       return false;
     }
+    if (runtime_opt.clipboard_chunk_rows > 0 && !runtime_opt.clipboard_chunk_confirm) {
+      last_error_ =
+          "clipboard_chunk_confirm callback is required when clipboard_chunk_rows is enabled.";
+      return false;
+    }
   }
   std::string err;
   std::unique_ptr<IDataSourceProvider> provider = make_provider(runtime_opt.source_type, &err);
@@ -395,14 +400,34 @@ bool CWvExport::Export(const std::string &source_path,
     return false;
   }
   const bool split_enabled = (!clipboard_mode && runtime_opt.max_rows_per_file > 0);
+  const bool clipboard_chunk_mode =
+      (clipboard_mode && runtime_opt.clipboard_chunk_rows > 0 &&
+       static_cast<bool>(runtime_opt.clipboard_chunk_confirm));
   int part_index = 1;
   int row_index_in_file = 0;
   int rows_in_current_file = 0;
   int total_rows_exported = 0;
+  int clipboard_chunks_copied = 0;
+  bool stopped_by_user = false;
   std::string current_final_path;
   std::string current_temp_path;
   std::vector<std::string> output_paths;
   std::unique_ptr<IExportWriter> writer;
+  auto finalize_result = [&]() {
+    if (!result) {
+      return;
+    }
+    result->rows_exported = total_rows_exported;
+    result->columns_exported = (int)resolved.size();
+    result->output_paths = output_paths;
+    result->clipboard_chunks_copied = clipboard_chunks_copied;
+    result->stopped_by_user = stopped_by_user;
+    if (clipboard_mode) {
+      result->output_path = "clipboard://plain-text";
+    } else {
+      result->output_path = output_paths.empty() ? "" : output_paths.front();
+    }
+  };
 
   auto cleanup_current_temp = [&writer, &current_temp_path]() {
     writer.reset();
@@ -432,7 +457,9 @@ bool CWvExport::Export(const std::string &source_path,
     row_index_in_file = 0;
     rows_in_current_file = 0;
 
-    if (runtime_opt.include_header) {
+    const bool should_write_header =
+        runtime_opt.include_header && (!clipboard_chunk_mode || idx == 1);
+    if (should_write_header) {
       if (!writer->WriteHeader(resolved, &err)) {
         return false;
       }
@@ -450,6 +477,7 @@ bool CWvExport::Export(const std::string &source_path,
     writer.reset();
 
     if (clipboard_mode) {
+      ++clipboard_chunks_copied;
       return true;
     }
 
@@ -479,12 +507,7 @@ bool CWvExport::Export(const std::string &source_path,
       cleanup_committed_outputs();
       output_paths.clear();
     }
-    if (result) {
-      result->rows_exported = total_rows_exported;
-      result->columns_exported = (int)resolved.size();
-      result->output_paths = output_paths;
-      result->output_path = output_paths.empty() ? "" : output_paths.front();
-    }
+    finalize_result();
     return false;
   };
 
@@ -502,13 +525,34 @@ bool CWvExport::Export(const std::string &source_path,
     if (is_canceled()) {
       return cancel_and_finish();
     }
-    if (split_enabled && rows_in_current_file >= runtime_opt.max_rows_per_file) {
+    const bool rotate_by_split = split_enabled && rows_in_current_file >= runtime_opt.max_rows_per_file;
+    const bool rotate_by_clipboard_chunk =
+        clipboard_chunk_mode && rows_in_current_file >= runtime_opt.clipboard_chunk_rows;
+    if (rotate_by_split || rotate_by_clipboard_chunk) {
       if (!close_part(true)) {
         if (last_error_.empty()) {
           last_error_ = err.empty() ? "failed to close current export part." : err;
         }
         cleanup_current_temp();
         return false;
+      }
+      if (rotate_by_clipboard_chunk) {
+        CWvClipboardChunkAction action = CWvClipboardChunkAction::Continue;
+        try {
+          action = runtime_opt.clipboard_chunk_confirm(total_rows_exported, rows_in_current_file);
+        } catch (...) {
+          last_error_ = "clipboard_chunk_confirm callback threw an exception.";
+          return false;
+        }
+        if (action == CWvClipboardChunkAction::Stop) {
+          stopped_by_user = true;
+          if (!last_warning_.empty()) {
+            last_warning_ += "; ";
+          }
+          last_warning_ += "clipboard copy stopped by user.";
+          finalize_result();
+          return true;
+        }
       }
       ++part_index;
       if (!open_part(part_index)) {
@@ -555,16 +599,7 @@ bool CWvExport::Export(const std::string &source_path,
     return false;
   }
 
-  if (result) {
-    result->rows_exported = total_rows_exported;
-    result->columns_exported = (int)resolved.size();
-    result->output_paths = output_paths;
-    if (clipboard_mode) {
-      result->output_path = "clipboard://plain-text";
-    } else {
-      result->output_path = output_paths.empty() ? "" : output_paths.front();
-    }
-  }
+  finalize_result();
   return true;
 }
 

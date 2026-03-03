@@ -43,6 +43,8 @@ private:
   bool include_header_ = true;
   bool large_integer_as_text_ = true;
   size_t max_clipboard_bytes_ = 0;
+  int max_clipboard_rows_ = 0;
+  int data_rows_written_ = 0;
   std::string buffer_;
 };
 

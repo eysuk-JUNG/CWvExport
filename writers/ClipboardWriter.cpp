@@ -18,9 +18,15 @@ bool ClipboardWriter::Begin(const CWvExportOptions &options,
   include_header_ = options.include_header;
   large_integer_as_text_ = options.large_integer_as_text;
   max_clipboard_bytes_ = options.max_clipboard_bytes;
+  max_clipboard_rows_ = options.max_clipboard_rows;
+  data_rows_written_ = 0;
   buffer_.clear();
   if (max_clipboard_bytes_ == 0) {
     *err = "max_clipboard_bytes must be greater than zero for clipboard export.";
+    return false;
+  }
+  if (max_clipboard_rows_ <= 0) {
+    *err = "max_clipboard_rows must be greater than zero for clipboard export.";
     return false;
   }
 
@@ -93,6 +99,11 @@ bool ClipboardWriter::FlushCurrentRow(std::string *err) {
   if (current_row_index_ < 0) {
     return true;
   }
+  if (data_rows_written_ >= max_clipboard_rows_) {
+    *err = "clipboard row count exceeded max_clipboard_rows (" +
+           std::to_string(max_clipboard_rows_) + ").";
+    return false;
+  }
 
   std::vector<std::string> row_values;
   row_values.reserve(current_row_.size());
@@ -126,7 +137,11 @@ bool ClipboardWriter::FlushCurrentRow(std::string *err) {
 
   current_row_.assign(headers_.size(), RowCell{});
   current_row_index_ = -1;
-  return AppendLine(row_values, err);
+  if (!AppendLine(row_values, err)) {
+    return false;
+  }
+  ++data_rows_written_;
+  return true;
 }
 
 bool ClipboardWriter::AppendLine(const std::vector<std::string> &cells, std::string *err) {

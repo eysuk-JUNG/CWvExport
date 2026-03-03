@@ -7,6 +7,7 @@
 #include <vector>
 #include <atomic>
 #include <cstddef>
+#include <functional>
 #include <mutex>
 
 class IDataSourceProvider;
@@ -32,6 +33,11 @@ enum class CWvJsonBackend {
 
 enum class CWvClipboardFormat {
   PlainText = 0
+};
+
+enum class CWvClipboardChunkAction {
+  Continue = 0,
+  Stop = 1
 };
 
 enum class CWvCancelPolicy {
@@ -63,6 +69,10 @@ struct CWvExportOptions {
   CWvJsonBackend json_backend = CWvJsonBackend::RapidJson;
   CWvClipboardFormat clipboard_format = CWvClipboardFormat::PlainText;
   size_t max_clipboard_bytes = 16u * 1024u * 1024u;
+  int max_clipboard_rows = 50000;
+  int clipboard_chunk_rows = 0; // 0: disabled
+  std::function<CWvClipboardChunkAction(int copied_rows, int chunk_rows)>
+      clipboard_chunk_confirm;
   int max_rows_per_file = 0; // 0: disabled
   CWvCancelPolicy cancel_policy = CWvCancelPolicy::KeepPartial;
   /*
@@ -77,6 +87,8 @@ struct CWvExportResult {
   int columns_exported = 0;
   std::string output_path;
   std::vector<std::string> output_paths;
+  int clipboard_chunks_copied = 0;
+  bool stopped_by_user = false;
 };
 
 class CWvExport {

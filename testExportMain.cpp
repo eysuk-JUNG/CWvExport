@@ -84,6 +84,31 @@ int create_seed_sqlite_db(const char *db_path, int row_count) {
   return 0;
 }
 
+int get_sqlite_row_count(const char *db_path, int *out_rows) {
+  sqlite3 *db = nullptr;
+  sqlite3_stmt *stmt = nullptr;
+  if (sqlite3_open(db_path, &db) != SQLITE_OK) {
+    sqlite3_close(db);
+    return -1;
+  }
+  if (sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM sample_data;", -1, &stmt, nullptr) !=
+      SQLITE_OK) {
+    sqlite3_close(db);
+    return -1;
+  }
+  int rows = -1;
+  if (sqlite3_step(stmt) == SQLITE_ROW) {
+    rows = sqlite3_column_int(stmt, 0);
+  }
+  sqlite3_finalize(stmt);
+  sqlite3_close(db);
+  if (rows < 0) {
+    return -1;
+  }
+  *out_rows = rows;
+  return 0;
+}
+
 bool duckdb_exec(duckdb_connection conn, const char *sql, std::string *err) {
   duckdb_result r{};
   if (duckdb_query(conn, sql, &r) != DuckDBSuccess) {
@@ -161,6 +186,33 @@ int create_seed_duckdb_db(const char *db_path, int row_count) {
   return 0;
 }
 
+int get_duckdb_row_count(const char *db_path, int *out_rows) {
+  duckdb_database db = nullptr;
+  duckdb_connection conn = nullptr;
+  duckdb_result result{};
+  if (duckdb_open(db_path, &db) != DuckDBSuccess) {
+    return -1;
+  }
+  if (duckdb_connect(db, &conn) != DuckDBSuccess) {
+    duckdb_close(&db);
+    return -1;
+  }
+  if (duckdb_query(conn, "SELECT COUNT(*) FROM sample_data;", &result) != DuckDBSuccess) {
+    duckdb_disconnect(&conn);
+    duckdb_close(&db);
+    return -1;
+  }
+  const int rows = static_cast<int>(duckdb_value_int64(&result, 0, 0));
+  duckdb_destroy_result(&result);
+  duckdb_disconnect(&conn);
+  duckdb_close(&db);
+  if (rows < 0) {
+    return -1;
+  }
+  *out_rows = rows;
+  return 0;
+}
+
 int verify_exported_xlsx(const char *xlsx_path, int expected_rows) {
   cxlsx_reader *r = cxlsx_reader_open(xlsx_path, nullptr);
   if (r == nullptr) {
@@ -185,7 +237,57 @@ int verify_exported_xlsx(const char *xlsx_path, int expected_rows) {
   return 0;
 }
 
-int verify_exported_json(const char *json_path) {
+int count_json_rows(const std::string &content) {
+  const size_t rows_key = content.find("\"rows\"");
+  if (rows_key == std::string::npos) {
+    return -1;
+  }
+  const size_t rows_array_start = content.find('[', rows_key);
+  if (rows_array_start == std::string::npos) {
+    return -1;
+  }
+
+  bool in_string = false;
+  bool escaped = false;
+  int depth = 0;
+  int rows = 0;
+  for (size_t i = rows_array_start; i < content.size(); ++i) {
+    const char ch = content[i];
+    if (in_string) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch == '\\') {
+        escaped = true;
+      } else if (ch == '"') {
+        in_string = false;
+      }
+      continue;
+    }
+    if (ch == '"') {
+      in_string = true;
+      continue;
+    }
+    if (ch == '[') {
+      ++depth;
+      if (depth == 2) {
+        ++rows;
+      }
+      continue;
+    }
+    if (ch == ']') {
+      if (depth <= 0) {
+        return -1;
+      }
+      --depth;
+      if (depth == 0) {
+        return rows;
+      }
+    }
+  }
+  return -1;
+}
+
+int verify_exported_json(const char *json_path, int expected_rows = -1) {
   std::ifstream in(json_path, std::ios::binary);
   if (!in.is_open()) {
     return -1;
@@ -200,6 +302,12 @@ int verify_exported_json(const char *json_path) {
   }
   if (content.find("[") == std::string::npos || content.find("]") == std::string::npos) {
     return -1;
+  }
+  if (expected_rows >= 0) {
+    const int json_rows = count_json_rows(content);
+    if (json_rows != expected_rows) {
+      return -1;
+    }
   }
   return 0;
 }
@@ -541,6 +649,91 @@ int run_csv_focus_tests(const char *db_path, CWvDataSourceType source_type,
   printf("[testExport] csv-focus all checks passed.\n");
   return 0;
 }
+
+int run_split_focus_tests(const char *db_path, CWvDataSourceType source_type,
+                          const std::vector<CWvExportColumn> &mapping, int expected_rows) {
+  constexpr int kSplitRows = 1000;
+  const int expected_parts = (expected_rows + kSplitRows - 1) / kSplitRows;
+
+  auto run_split_case = [&](CWvExportFormat format, CWvJsonBackend json_backend,
+                            const char *out, const char *label, bool csv_utf8,
+                            bool csv_crlf) -> int {
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+    remove_part_files(out);
+
+    CWvExportOptions opt;
+    opt.source_type = source_type;
+    opt.export_format = format;
+    opt.json_backend = json_backend;
+    opt.table_name = "sample_data";
+    opt.output_path = out;
+    opt.include_header = true;
+    opt.enforce_source_index = true;
+    opt.max_rows_per_file = kSplitRows;
+    opt.csv_use_utf8 = csv_utf8;
+    opt.csv_use_crlf = csv_crlf;
+
+    CWvExport exporter;
+    CWvExportResult res;
+    if (!exporter.Export(db_path, mapping, opt, &res)) {
+      fprintf(stderr, "[testExport] split-focus %s export failed: %s\n", label,
+              exporter.GetLastError().c_str());
+      return 31;
+    }
+    if (res.output_paths.size() != static_cast<size_t>(expected_parts)) {
+      fprintf(stderr, "[testExport] split-focus %s part count mismatch: %zu\n", label,
+              res.output_paths.size());
+      return 32;
+    }
+
+    for (size_t i = 0; i < res.output_paths.size(); ++i) {
+      const int expected_part_rows =
+          (i + 1 == res.output_paths.size())
+              ? (expected_rows - static_cast<int>(i) * kSplitRows)
+              : kSplitRows;
+      int rc = -1;
+      if (format == CWvExportFormat::Xlsx) {
+        rc = verify_exported_xlsx(res.output_paths[i].c_str(), expected_part_rows);
+      } else if (format == CWvExportFormat::Csv) {
+        rc = verify_exported_csv(res.output_paths[i].c_str(), expected_part_rows);
+      } else if (format == CWvExportFormat::Json) {
+        rc = verify_exported_json(res.output_paths[i].c_str(), expected_part_rows);
+      }
+      if (rc != 0) {
+        fprintf(stderr, "[testExport] split-focus %s verify failed: %s\n", label,
+                res.output_paths[i].c_str());
+        return 33;
+      }
+    }
+    printf("[testExport] split test passed (%s).\n", label);
+    return 0;
+  };
+
+  int rc = run_split_case(CWvExportFormat::Xlsx, CWvJsonBackend::RapidJson,
+                          "out_test/split_focus.xlsx", "xlsx", true, true);
+  if (rc != 0) {
+    return rc;
+  }
+  rc = run_split_case(CWvExportFormat::Csv, CWvJsonBackend::RapidJson,
+                      "out_test/split_focus.csv", "csv", true, true);
+  if (rc != 0) {
+    return rc;
+  }
+  rc = run_split_case(CWvExportFormat::Json, CWvJsonBackend::RapidJson,
+                      "out_test/split_focus_rapid.json", "json-rapid", true, true);
+  if (rc != 0) {
+    return rc;
+  }
+  rc = run_split_case(CWvExportFormat::Json, CWvJsonBackend::YyJson,
+                      "out_test/split_focus_yy.json", "json-yy", true, true);
+  if (rc != 0) {
+    return rc;
+  }
+
+  printf("[testExport] split-focus all checks passed.\n");
+  return 0;
+}
 } // namespace
 
 int main(int argc, char **argv) {
@@ -743,6 +936,32 @@ int main(int argc, char **argv) {
     }
     fprintf(stderr, "[testExport] unknown source: %s (use sqlite|duckdb)\n", source);
     return 6;
+  } else if (strcmp(mode, "split-check") == 0) {
+    int expected_rows = 0;
+    if (strcmp(source, "sqlite") == 0) {
+      if (create_seed_sqlite_db(db_path, kSeedRowCount) != 0) {
+        fprintf(stderr, "[testExport] failed to create sqlite seed db for split-check.\n");
+        return 1;
+      }
+      if (get_sqlite_row_count(db_path, &expected_rows) != 0) {
+        fprintf(stderr, "[testExport] failed to read sqlite row count for split-check.\n");
+        return 1;
+      }
+      return run_split_focus_tests(db_path, CWvDataSourceType::Sqlite, mapping, expected_rows);
+    }
+    if (strcmp(source, "duckdb") == 0) {
+      if (create_seed_duckdb_db(db_path, kSeedRowCount) != 0) {
+        fprintf(stderr, "[testExport] failed to create duckdb seed db for split-check.\n");
+        return 1;
+      }
+      if (get_duckdb_row_count(db_path, &expected_rows) != 0) {
+        fprintf(stderr, "[testExport] failed to read duckdb row count for split-check.\n");
+        return 1;
+      }
+      return run_split_focus_tests(db_path, CWvDataSourceType::DuckDb, mapping, expected_rows);
+    }
+    fprintf(stderr, "[testExport] unknown source: %s (use sqlite|duckdb)\n", source);
+    return 6;
   } else if (strcmp(mode, "json-rapid") == 0) {
     opt.export_format = CWvExportFormat::Json;
     opt.json_backend = CWvJsonBackend::RapidJson;
@@ -757,11 +976,28 @@ int main(int argc, char **argv) {
   } else if (strcmp(mode, "clipboard") == 0) {
     opt.export_format = CWvExportFormat::Clipboard;
     opt.max_clipboard_bytes = 16u * 1024u * 1024u;
+  } else if (strcmp(mode, "clipboard-chunk") == 0) {
+    opt.export_format = CWvExportFormat::Clipboard;
+    opt.max_clipboard_bytes = 16u * 1024u * 1024u;
+    opt.max_clipboard_rows = 1000000;
+    opt.clipboard_chunk_rows = 10000;
+    opt.clipboard_chunk_confirm = [](int copied_rows, int chunk_rows) {
+      std::printf("[testExport] %d rows copied to clipboard. Copy next %d rows? [y/N]: ",
+                  copied_rows, chunk_rows);
+      std::fflush(stdout);
+      char answer[8] = {0};
+      if (std::fgets(answer, sizeof(answer), stdin) == nullptr) {
+        return CWvClipboardChunkAction::Stop;
+      }
+      const char c = static_cast<char>(std::tolower(static_cast<unsigned char>(answer[0])));
+      return (c == 'y') ? CWvClipboardChunkAction::Continue
+                        : CWvClipboardChunkAction::Stop;
+    };
   } else if (strcmp(mode, "clipboard-limit") == 0) {
     opt.export_format = CWvExportFormat::Clipboard;
     opt.max_clipboard_bytes = 256;
   } else if (strcmp(mode, "xlsx") != 0) {
-    fprintf(stderr, "[testExport] unknown mode: %s (use xlsx|csv|csv-ansi|csv-check|json-rapid|json-yy|clipboard|clipboard-limit|all|cancel)\n",
+    fprintf(stderr, "[testExport] unknown mode: %s (use xlsx|csv|csv-ansi|csv-check|split-check|json-rapid|json-yy|clipboard|clipboard-chunk|clipboard-limit|all|cancel)\n",
             mode);
     return 5;
   }
@@ -785,6 +1021,10 @@ int main(int argc, char **argv) {
   printf("[testExport] exported rows=%d cols=%d file=%s\n", res.rows_exported,
          res.columns_exported, res.output_path.c_str());
   if (opt.export_format == CWvExportFormat::Clipboard) {
+    if (res.stopped_by_user) {
+      printf("[testExport] clipboard chunk copy stopped by user. rows=%d chunks=%d\n",
+             res.rows_exported, res.clipboard_chunks_copied);
+    }
     printf("[testExport] clipboard export passed.\n");
     return 0;
   }
