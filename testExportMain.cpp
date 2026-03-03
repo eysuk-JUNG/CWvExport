@@ -238,6 +238,33 @@ int verify_exported_xlsx(const char *xlsx_path, int expected_rows) {
   return 0;
 }
 
+int verify_exported_xlsx_no_header(const char *xlsx_path, int expected_rows) {
+  cxlsx_reader *r = cxlsx_reader_open(xlsx_path, nullptr);
+  if (r == nullptr) {
+    return -1;
+  }
+  if (cxlsx_reader_open_sheet(r, 0) != CXLSX_OK) {
+    cxlsx_reader_close(r);
+    return -1;
+  }
+  const int row_count = cxlsx_reader_row_count(r);
+  if (row_count != expected_rows) {
+    cxlsx_reader_close(r);
+    return -1;
+  }
+  cxlsx_read_cell c{};
+  if (cxlsx_reader_get_cell(r, 0, 0, &c) != CXLSX_OK || c.str_val == nullptr) {
+    cxlsx_reader_close(r);
+    return -1;
+  }
+  if (strcmp(c.str_val, "UserName") == 0) {
+    cxlsx_reader_close(r);
+    return -1;
+  }
+  cxlsx_reader_close(r);
+  return 0;
+}
+
 int count_json_rows(const std::string &content) {
   const size_t rows_key = content.find("\"rows\"");
   if (rows_key == std::string::npos) {
@@ -848,6 +875,84 @@ int run_clipboard_focus_tests(const char *db_path, CWvDataSourceType source_type
   printf("[testExport] clipboard-focus all checks passed.\n");
   return 0;
 }
+
+int run_writer_focus_tests(const char *db_path, CWvDataSourceType source_type,
+                           const std::vector<CWvExportColumn> &mapping, int expected_rows) {
+  // 1) XLSX no-header verification
+  {
+    CWvExportOptions opt;
+    opt.source_type = source_type;
+    opt.export_format = CWvExportFormat::Xlsx;
+    opt.table_name = "sample_data";
+    opt.sheet_name = "ExportData";
+    opt.output_path = "out_test/xlsx_focus_no_header.xlsx";
+    opt.include_header = false;
+    opt.enforce_source_index = true;
+
+    CWvExport exporter;
+    CWvExportResult res;
+    if (!exporter.Export(db_path, mapping, opt, &res)) {
+      fprintf(stderr, "[testExport] writer-focus xlsx no-header export failed: %s\n",
+              exporter.GetLastError().c_str());
+      return 61;
+    }
+    if (verify_exported_xlsx_no_header(res.output_path.c_str(), expected_rows) != 0) {
+      fprintf(stderr, "[testExport] writer-focus xlsx no-header verify failed.\n");
+      return 62;
+    }
+  }
+
+  // 2) JSON rapid row-count verification
+  {
+    CWvExportOptions opt;
+    opt.source_type = source_type;
+    opt.export_format = CWvExportFormat::Json;
+    opt.json_backend = CWvJsonBackend::RapidJson;
+    opt.table_name = "sample_data";
+    opt.output_path = "out_test/json_focus_rapid.json";
+    opt.include_header = true;
+    opt.enforce_source_index = true;
+
+    CWvExport exporter;
+    CWvExportResult res;
+    if (!exporter.Export(db_path, mapping, opt, &res)) {
+      fprintf(stderr, "[testExport] writer-focus json-rapid export failed: %s\n",
+              exporter.GetLastError().c_str());
+      return 63;
+    }
+    if (verify_exported_json(res.output_path.c_str(), expected_rows) != 0) {
+      fprintf(stderr, "[testExport] writer-focus json-rapid verify failed.\n");
+      return 64;
+    }
+  }
+
+  // 3) JSON yy row-count verification
+  {
+    CWvExportOptions opt;
+    opt.source_type = source_type;
+    opt.export_format = CWvExportFormat::Json;
+    opt.json_backend = CWvJsonBackend::YyJson;
+    opt.table_name = "sample_data";
+    opt.output_path = "out_test/json_focus_yy.json";
+    opt.include_header = true;
+    opt.enforce_source_index = true;
+
+    CWvExport exporter;
+    CWvExportResult res;
+    if (!exporter.Export(db_path, mapping, opt, &res)) {
+      fprintf(stderr, "[testExport] writer-focus json-yy export failed: %s\n",
+              exporter.GetLastError().c_str());
+      return 65;
+    }
+    if (verify_exported_json(res.output_path.c_str(), expected_rows) != 0) {
+      fprintf(stderr, "[testExport] writer-focus json-yy verify failed.\n");
+      return 66;
+    }
+  }
+
+  printf("[testExport] writer-focus all checks passed.\n");
+  return 0;
+}
 } // namespace
 
 int main(int argc, char **argv) {
@@ -992,42 +1097,50 @@ int main(int argc, char **argv) {
     printf("[testExport] all 8 cases passed.\n");
     return 0;
   } else if (strcmp(mode, "cancel") == 0) {
-    int rc = 0;
+    auto run_all_cancel_cases = [&](CWvDataSourceType st) -> int {
+      struct CancelCase {
+        CWvExportFormat format;
+        CWvJsonBackend backend;
+        const char *out;
+        const char *keep_label;
+        const char *delete_label;
+      };
+      const CancelCase cases[] = {
+          {CWvExportFormat::Json, CWvJsonBackend::RapidJson, "out_test/cancel_test.json",
+           "json-rapid-keep", "json-rapid-delete"},
+          {CWvExportFormat::Json, CWvJsonBackend::YyJson, "out_test/cancel_test_yy.json",
+           "json-yy-keep", "json-yy-delete"},
+          {CWvExportFormat::Xlsx, CWvJsonBackend::RapidJson, "out_test/cancel_test.xlsx",
+           "xlsx-keep", "xlsx-delete"},
+      };
+      for (const auto &c : cases) {
+        int rc = run_cancel_export_test(db_path, st, mapping, c.format, c.backend, c.out,
+                                        CWvCancelPolicy::KeepPartial, c.keep_label);
+        if (rc != 0) {
+          return rc;
+        }
+        rc = run_cancel_export_test(db_path, st, mapping, c.format, c.backend, c.out,
+                                    CWvCancelPolicy::DeletePartial, c.delete_label);
+        if (rc != 0) {
+          return rc;
+        }
+      }
+      return 0;
+    };
+
     if (strcmp(source, "sqlite") == 0) {
       if (create_seed_sqlite_db(db_path, kCancelSeedRowCount) != 0) {
         fprintf(stderr, "[testExport] failed to create sqlite seed db for cancel test.\n");
         return 1;
       }
-      rc = run_cancel_export_test(db_path, CWvDataSourceType::Sqlite, mapping,
-                                  CWvExportFormat::Json, CWvJsonBackend::RapidJson,
-                                  "out_test/cancel_test.json", CWvCancelPolicy::KeepPartial,
-                                  "keep");
-      if (rc != 0) {
-        return rc;
-      }
-      rc = run_cancel_export_test(db_path, CWvDataSourceType::Sqlite, mapping,
-                                  CWvExportFormat::Json, CWvJsonBackend::RapidJson,
-                                  "out_test/cancel_test.json", CWvCancelPolicy::DeletePartial,
-                                  "delete");
-      return rc;
+      return run_all_cancel_cases(CWvDataSourceType::Sqlite);
     }
     if (strcmp(source, "duckdb") == 0) {
       if (create_seed_duckdb_db(db_path, kCancelSeedRowCount) != 0) {
         fprintf(stderr, "[testExport] failed to create duckdb seed db for cancel test.\n");
         return 1;
       }
-      rc = run_cancel_export_test(db_path, CWvDataSourceType::DuckDb, mapping,
-                                  CWvExportFormat::Json, CWvJsonBackend::RapidJson,
-                                  "out_test/cancel_test.json", CWvCancelPolicy::KeepPartial,
-                                  "keep");
-      if (rc != 0) {
-        return rc;
-      }
-      rc = run_cancel_export_test(db_path, CWvDataSourceType::DuckDb, mapping,
-                                  CWvExportFormat::Json, CWvJsonBackend::RapidJson,
-                                  "out_test/cancel_test.json", CWvCancelPolicy::DeletePartial,
-                                  "delete");
-      return rc;
+      return run_all_cancel_cases(CWvDataSourceType::DuckDb);
     }
     fprintf(stderr, "[testExport] unknown source: %s (use sqlite|duckdb)\n", source);
     return 6;
@@ -1093,6 +1206,23 @@ int main(int argc, char **argv) {
     }
     fprintf(stderr, "[testExport] unknown source: %s (use sqlite|duckdb)\n", source);
     return 6;
+  } else if (strcmp(mode, "writer-check") == 0) {
+    if (strcmp(source, "sqlite") == 0) {
+      if (create_seed_sqlite_db(db_path, kSeedRowCount) != 0) {
+        fprintf(stderr, "[testExport] failed to create sqlite seed db for writer-check.\n");
+        return 1;
+      }
+      return run_writer_focus_tests(db_path, CWvDataSourceType::Sqlite, mapping, kSeedRowCount);
+    }
+    if (strcmp(source, "duckdb") == 0) {
+      if (create_seed_duckdb_db(db_path, kSeedRowCount) != 0) {
+        fprintf(stderr, "[testExport] failed to create duckdb seed db for writer-check.\n");
+        return 1;
+      }
+      return run_writer_focus_tests(db_path, CWvDataSourceType::DuckDb, mapping, kSeedRowCount);
+    }
+    fprintf(stderr, "[testExport] unknown source: %s (use sqlite|duckdb)\n", source);
+    return 6;
   } else if (strcmp(mode, "json-rapid") == 0) {
     opt.export_format = CWvExportFormat::Json;
     opt.json_backend = CWvJsonBackend::RapidJson;
@@ -1128,7 +1258,7 @@ int main(int argc, char **argv) {
     opt.export_format = CWvExportFormat::Clipboard;
     opt.max_clipboard_bytes = 256;
   } else if (strcmp(mode, "xlsx") != 0) {
-    fprintf(stderr, "[testExport] unknown mode: %s (use xlsx|csv|csv-ansi|csv-check|split-check|clipboard-check|json-rapid|json-yy|clipboard|clipboard-chunk|clipboard-limit|all|cancel)\n",
+    fprintf(stderr, "[testExport] unknown mode: %s (use xlsx|csv|csv-ansi|csv-check|split-check|clipboard-check|writer-check|json-rapid|json-yy|clipboard|clipboard-chunk|clipboard-limit|all|cancel)\n",
             mode);
     return 5;
   }
