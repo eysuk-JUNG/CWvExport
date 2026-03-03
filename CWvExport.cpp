@@ -6,6 +6,7 @@
 #include "providers/SqliteProvider.h"
 #include "writers/IExportWriter.h"
 #include "writers/ClipboardWriter.h"
+#include "writers/CsvWriter.h"
 #include "writers/JsonWriterRapid.h"
 #include "writers/JsonWriterYy.h"
 #include "writers/XlsxWriter.h"
@@ -231,6 +232,9 @@ std::unique_ptr<IExportWriter> make_writer(const CWvExportOptions &options,
   if (options.export_format == CWvExportFormat::Xlsx) {
     return std::make_unique<XlsxWriter>();
   }
+  if (options.export_format == CWvExportFormat::Csv) {
+    return std::make_unique<CsvWriter>();
+  }
   if (options.export_format == CWvExportFormat::Clipboard) {
     return std::make_unique<ClipboardWriter>();
   }
@@ -308,10 +312,11 @@ bool CWvExport::Export(const std::string &source_path,
   }
 
   if (options.export_format != CWvExportFormat::Xlsx &&
+      options.export_format != CWvExportFormat::Csv &&
       options.export_format != CWvExportFormat::Json &&
       options.export_format != CWvExportFormat::Clipboard) {
     last_error_ =
-        "export_format is not implemented yet. Current implementation: Xlsx, Json, Clipboard.";
+        "export_format is not implemented yet. Current implementation: Xlsx, Csv, Json, Clipboard.";
     return false;
   }
 

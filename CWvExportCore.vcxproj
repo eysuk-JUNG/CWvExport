@@ -278,6 +278,9 @@
     <ClCompile Include="writers\ClipboardWriter.cpp">
       <CompileAs>Default</CompileAs>
     </ClCompile>
+    <ClCompile Include="writers\CsvWriter.cpp">
+      <CompileAs>Default</CompileAs>
+    </ClCompile>
     <ClCompile Include="writers\XlsxWriter.cpp">
       <CompileAs>Default</CompileAs>
     </ClCompile>

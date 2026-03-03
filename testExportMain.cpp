@@ -204,6 +204,33 @@ int verify_exported_json(const char *json_path) {
   return 0;
 }
 
+int verify_exported_csv(const char *csv_path, int expected_rows) {
+  std::ifstream in(csv_path, std::ios::binary);
+  if (!in.is_open()) {
+    return -1;
+  }
+  std::string header;
+  if (!std::getline(in, header)) {
+    return -1;
+  }
+  if (!header.empty() && header.back() == '\r') {
+    header.pop_back();
+  }
+  if (header != "UserName,ID,SQL,Score") {
+    return -1;
+  }
+
+  int data_rows = 0;
+  std::string line;
+  while (std::getline(in, line)) {
+    if (!line.empty() && line.back() == '\r') {
+      line.pop_back();
+    }
+    ++data_rows;
+  }
+  return (data_rows == expected_rows) ? 0 : -1;
+}
+
 std::vector<std::string> find_part_files(const std::string &base_out) {
   std::vector<std::string> parts;
   const std::filesystem::path p(base_out);
@@ -396,6 +423,9 @@ int main(int argc, char **argv) {
         {CWvDataSourceType::Sqlite, CWvExportFormat::Json, CWvJsonBackend::YyJson,
          kDefaultDbPath,
          "out_test/all_sqlite_yy.json", "sqlite+json-yy"},
+        {CWvDataSourceType::Sqlite, CWvExportFormat::Csv, CWvJsonBackend::RapidJson,
+         kDefaultDbPath,
+         "out_test/all_sqlite.csv", "sqlite+csv"},
         {CWvDataSourceType::DuckDb, CWvExportFormat::Xlsx, CWvJsonBackend::RapidJson,
          kDefaultDuckDbPath,
          "out_test/all_duckdb.xlsx", "duckdb+xlsx"},
@@ -405,6 +435,9 @@ int main(int argc, char **argv) {
         {CWvDataSourceType::DuckDb, CWvExportFormat::Json, CWvJsonBackend::YyJson,
          kDefaultDuckDbPath,
          "out_test/all_duckdb_yy.json", "duckdb+json-yy"},
+        {CWvDataSourceType::DuckDb, CWvExportFormat::Csv, CWvJsonBackend::RapidJson,
+         kDefaultDuckDbPath,
+         "out_test/all_duckdb.csv", "duckdb+csv"},
     };
 
     for (const auto &c : cases) {
@@ -425,6 +458,8 @@ int main(int argc, char **argv) {
       int ok = 0;
       if (c.format == CWvExportFormat::Xlsx) {
         ok = verify_exported_xlsx(res.output_path.c_str(), kSeedRowCount);
+      } else if (c.format == CWvExportFormat::Csv) {
+        ok = verify_exported_csv(res.output_path.c_str(), kSeedRowCount);
       } else {
         ok = verify_exported_json(res.output_path.c_str());
       }
@@ -434,7 +469,7 @@ int main(int argc, char **argv) {
       }
       printf("[testExport] %s passed -> %s\n", c.label, res.output_path.c_str());
     }
-    printf("[testExport] all 6 cases passed.\n");
+    printf("[testExport] all 8 cases passed.\n");
     return 0;
   } else if (strcmp(mode, "cancel") == 0) {
     int rc = 0;
@@ -474,6 +509,8 @@ int main(int argc, char **argv) {
   } else if (strcmp(mode, "json-yy") == 0) {
     opt.export_format = CWvExportFormat::Json;
     opt.json_backend = CWvJsonBackend::YyJson;
+  } else if (strcmp(mode, "csv") == 0) {
+    opt.export_format = CWvExportFormat::Csv;
   } else if (strcmp(mode, "clipboard") == 0) {
     opt.export_format = CWvExportFormat::Clipboard;
     opt.max_clipboard_bytes = 16u * 1024u * 1024u;
@@ -481,7 +518,7 @@ int main(int argc, char **argv) {
     opt.export_format = CWvExportFormat::Clipboard;
     opt.max_clipboard_bytes = 256;
   } else if (strcmp(mode, "xlsx") != 0) {
-    fprintf(stderr, "[testExport] unknown mode: %s (use xlsx|json-rapid|json-yy|clipboard|clipboard-limit|all|cancel)\n",
+    fprintf(stderr, "[testExport] unknown mode: %s (use xlsx|csv|json-rapid|json-yy|clipboard|clipboard-limit|all|cancel)\n",
             mode);
     return 5;
   }
@@ -510,6 +547,11 @@ int main(int argc, char **argv) {
   }
   if (opt.export_format == CWvExportFormat::Xlsx) {
     if (verify_exported_xlsx(res.output_path.c_str(), kSeedRowCount) != 0) {
+      fprintf(stderr, "[testExport] verify failed.\n");
+      return 4;
+    }
+  } else if (opt.export_format == CWvExportFormat::Csv) {
+    if (verify_exported_csv(res.output_path.c_str(), kSeedRowCount) != 0) {
       fprintf(stderr, "[testExport] verify failed.\n");
       return 4;
     }
