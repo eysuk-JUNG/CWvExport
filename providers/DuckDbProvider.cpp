@@ -329,6 +329,7 @@ bool DuckDbProvider::PrepareSelect(const std::string &table_name,
     *err = "duckdb_execute_prepared_streaming failed: ";
     *err += (msg != nullptr) ? msg : "unknown";
     duckdb_destroy_result(&result_);
+    ResetStatement();
     return false;
   }
   // Prepared statement is no longer needed after result creation.
