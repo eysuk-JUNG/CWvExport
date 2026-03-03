@@ -1,4 +1,4 @@
-<?xml version='1.0' encoding='utf-8'?>
+﻿<?xml version='1.0' encoding='utf-8'?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Build">
   <ItemGroup Label="ProjectConfiguration">
     <ProjectConfiguration Include="Debug|Win32">
@@ -147,7 +147,7 @@
     <VcpkgTriplet Condition="'$(Platform)'=='x64' and ('$(Configuration)'=='Debug' or '$(Configuration)'=='Release' or '$(Configuration)'=='ReleaseWithDebugInfo')">x64-windows</VcpkgTriplet>
     <VcpkgTriplet Condition="'$(Platform)'=='Win32' and ('$(Configuration)'=='Debug-Static' or '$(Configuration)'=='Release-Static' or '$(Configuration)'=='ReleaseWithDebugInfo-Static')">x86-windows-static</VcpkgTriplet>
     <VcpkgTriplet Condition="'$(Platform)'=='Win32' and ('$(Configuration)'=='Debug' or '$(Configuration)'=='Release' or '$(Configuration)'=='ReleaseWithDebugInfo')">x86-windows</VcpkgTriplet>
-    <VcpkgEnableManifest>true</VcpkgEnableManifest>
+    <VcpkgEnableManifest>false</VcpkgEnableManifest>
     <VcpkgManifestConfiguration>$(Configuration)</VcpkgManifestConfiguration>
   </PropertyGroup>
 
@@ -161,7 +161,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
     <ClCompile>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\include;$(ProjectDir)..\src;$(ProjectDir)..\vendor\rapidjson\include;$(ProjectDir)..\vendor\yyjson\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\CWvXlib\include;$(ProjectDir)..\include;$(ProjectDir)..\src;$(ProjectDir)vendor\rapidjson\include;$(ProjectDir)vendor\yyjson\src;$(ProjectDir)..\CWvXlib\vendor\duckdb-bin;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
@@ -173,7 +173,7 @@
     </ClCompile>
     <Link>
       <AdditionalDependencies>libcrypto.lib;sqlite3.lib;duckdb.lib;CWvXlib.lib;ws2_32.lib;crypt32.lib;advapi32.lib;user32.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\$(Platform)\;$(SolutionDir)vendor\duckdb-bin\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(ProjectDir)..\CWvXlib\bin\$(Configuration)\$(Platform)\;$(ProjectDir)..\CWvXlib\vendor\duckdb-bin\;$(SolutionDir)bin\$(Configuration)\$(Platform)\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Console</SubSystem>
     </Link>
@@ -182,7 +182,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
     <ClCompile>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\include;$(ProjectDir)..\src;$(ProjectDir)..\vendor\rapidjson\include;$(ProjectDir)..\vendor\yyjson\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\CWvXlib\include;$(ProjectDir)..\include;$(ProjectDir)..\src;$(ProjectDir)vendor\rapidjson\include;$(ProjectDir)vendor\yyjson\src;$(ProjectDir)..\CWvXlib\vendor\duckdb-bin;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>MaxSpeed</Optimization>
@@ -195,7 +195,7 @@
     </ClCompile>
     <Link>
       <AdditionalDependencies>libcrypto.lib;sqlite3.lib;duckdb.lib;CWvXlib.lib;ws2_32.lib;crypt32.lib;advapi32.lib;user32.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\$(Platform)\;$(SolutionDir)vendor\duckdb-bin\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(ProjectDir)..\CWvXlib\bin\$(Configuration)\$(Platform)\;$(ProjectDir)..\CWvXlib\vendor\duckdb-bin\;$(SolutionDir)bin\$(Configuration)\$(Platform)\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>false</GenerateDebugInformation>
@@ -206,7 +206,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)'=='ReleaseWithDebugInfo'">
     <ClCompile>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\include;$(ProjectDir)..\src;$(ProjectDir)..\vendor\rapidjson\include;$(ProjectDir)..\vendor\yyjson\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\CWvXlib\include;$(ProjectDir)..\include;$(ProjectDir)..\src;$(ProjectDir)vendor\rapidjson\include;$(ProjectDir)vendor\yyjson\src;$(ProjectDir)..\CWvXlib\vendor\duckdb-bin;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>MaxSpeed</Optimization>
@@ -219,7 +219,7 @@
     </ClCompile>
     <Link>
       <AdditionalDependencies>libcrypto.lib;sqlite3.lib;duckdb.lib;CWvXlib.lib;ws2_32.lib;crypt32.lib;advapi32.lib;user32.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\$(Platform)\;$(SolutionDir)vendor\duckdb-bin\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(ProjectDir)..\CWvXlib\bin\$(Configuration)\$(Platform)\;$(ProjectDir)..\CWvXlib\vendor\duckdb-bin\;$(SolutionDir)bin\$(Configuration)\$(Platform)\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -230,7 +230,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug-Static'">
     <ClCompile>
       <PreprocessorDefinitions>CXLSX_STATIC;_CRT_SECURE_NO_WARNINGS;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\include;$(ProjectDir)..\src;$(ProjectDir)..\vendor\rapidjson\include;$(ProjectDir)..\vendor\yyjson\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\CWvXlib\include;$(ProjectDir)..\include;$(ProjectDir)..\src;$(ProjectDir)vendor\rapidjson\include;$(ProjectDir)vendor\yyjson\src;$(ProjectDir)..\CWvXlib\vendor\duckdb-bin;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
@@ -242,7 +242,7 @@
     </ClCompile>
     <Link>
       <AdditionalDependencies>libcrypto.lib;sqlite3.lib;duckdb.lib;CWvXlib-static.lib;ws2_32.lib;crypt32.lib;advapi32.lib;user32.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\$(Platform)\;$(SolutionDir)vendor\duckdb-bin\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(ProjectDir)..\CWvXlib\bin\$(Configuration)\$(Platform)\;$(ProjectDir)..\CWvXlib\vendor\duckdb-bin\;$(SolutionDir)bin\$(Configuration)\$(Platform)\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Console</SubSystem>
     </Link>
@@ -251,7 +251,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release-Static'">
     <ClCompile>
       <PreprocessorDefinitions>CXLSX_STATIC;_CRT_SECURE_NO_WARNINGS;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\include;$(ProjectDir)..\src;$(ProjectDir)..\vendor\rapidjson\include;$(ProjectDir)..\vendor\yyjson\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\CWvXlib\include;$(ProjectDir)..\include;$(ProjectDir)..\src;$(ProjectDir)vendor\rapidjson\include;$(ProjectDir)vendor\yyjson\src;$(ProjectDir)..\CWvXlib\vendor\duckdb-bin;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>MaxSpeed</Optimization>
@@ -264,7 +264,7 @@
     </ClCompile>
     <Link>
       <AdditionalDependencies>libcrypto.lib;sqlite3.lib;duckdb.lib;CWvXlib-static.lib;ws2_32.lib;crypt32.lib;advapi32.lib;user32.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\$(Platform)\;$(SolutionDir)vendor\duckdb-bin\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(ProjectDir)..\CWvXlib\bin\$(Configuration)\$(Platform)\;$(ProjectDir)..\CWvXlib\vendor\duckdb-bin\;$(SolutionDir)bin\$(Configuration)\$(Platform)\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>false</GenerateDebugInformation>
@@ -275,7 +275,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)'=='ReleaseWithDebugInfo-Static'">
     <ClCompile>
       <PreprocessorDefinitions>CXLSX_STATIC;_CRT_SECURE_NO_WARNINGS;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\include;$(ProjectDir)..\src;$(ProjectDir)..\vendor\rapidjson\include;$(ProjectDir)..\vendor\yyjson\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\CWvXlib\include;$(ProjectDir)..\include;$(ProjectDir)..\src;$(ProjectDir)vendor\rapidjson\include;$(ProjectDir)vendor\yyjson\src;$(ProjectDir)..\CWvXlib\vendor\duckdb-bin;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>MaxSpeed</Optimization>
@@ -288,7 +288,7 @@
     </ClCompile>
     <Link>
       <AdditionalDependencies>libcrypto.lib;sqlite3.lib;duckdb.lib;CWvXlib-static.lib;ws2_32.lib;crypt32.lib;advapi32.lib;user32.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)bin\$(Configuration)\$(Platform)\;$(SolutionDir)vendor\duckdb-bin\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(ProjectDir)..\CWvXlib\bin\$(Configuration)\$(Platform)\;$(ProjectDir)..\CWvXlib\vendor\duckdb-bin\;$(SolutionDir)bin\$(Configuration)\$(Platform)\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -306,7 +306,7 @@
     <ProjectReference Include="CWvExportCore.vcxproj">
       <Project>{5FD454D6-70B5-47D2-8D5A-112C52CA3E11}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\CWvXlib\CWvXlib.vcxproj">
+    <ProjectReference Include="..\CWvXlib\CWvXlib\CWvXlib.vcxproj">
       <Project>{A1B2C3D4-1111-2222-3333-444455556666}</Project>
     </ProjectReference>
   </ItemGroup>

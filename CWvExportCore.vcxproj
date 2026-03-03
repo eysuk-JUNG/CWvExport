@@ -1,4 +1,4 @@
-<?xml version='1.0' encoding='utf-8'?>
+﻿<?xml version='1.0' encoding='utf-8'?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Build">
   <ItemGroup Label="ProjectConfiguration">
     <ProjectConfiguration Include="Debug|Win32">
@@ -147,7 +147,7 @@
     <VcpkgTriplet Condition="'$(Platform)'=='x64' and ('$(Configuration)'=='Debug' or '$(Configuration)'=='Release' or '$(Configuration)'=='ReleaseWithDebugInfo')">x64-windows</VcpkgTriplet>
     <VcpkgTriplet Condition="'$(Platform)'=='Win32' and ('$(Configuration)'=='Debug-Static' or '$(Configuration)'=='Release-Static' or '$(Configuration)'=='ReleaseWithDebugInfo-Static')">x86-windows-static</VcpkgTriplet>
     <VcpkgTriplet Condition="'$(Platform)'=='Win32' and ('$(Configuration)'=='Debug' or '$(Configuration)'=='Release' or '$(Configuration)'=='ReleaseWithDebugInfo')">x86-windows</VcpkgTriplet>
-    <VcpkgEnableManifest>true</VcpkgEnableManifest>
+    <VcpkgEnableManifest>false</VcpkgEnableManifest>
     <VcpkgManifestConfiguration>$(Configuration)</VcpkgManifestConfiguration>
     <TargetName>CWvExportCore</TargetName>
   </PropertyGroup>
@@ -162,7 +162,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
     <ClCompile>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\include;$(ProjectDir)..\src;$(ProjectDir)..\vendor\rapidjson\include;$(ProjectDir)..\vendor\yyjson\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\CWvXlib\include;$(ProjectDir)..\include;$(ProjectDir)..\src;$(ProjectDir)vendor\rapidjson\include;$(ProjectDir)vendor\yyjson\src;$(ProjectDir)..\CWvXlib\vendor\duckdb-bin;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
@@ -177,7 +177,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
     <ClCompile>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\include;$(ProjectDir)..\src;$(ProjectDir)..\vendor\rapidjson\include;$(ProjectDir)..\vendor\yyjson\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\CWvXlib\include;$(ProjectDir)..\include;$(ProjectDir)..\src;$(ProjectDir)vendor\rapidjson\include;$(ProjectDir)vendor\yyjson\src;$(ProjectDir)..\CWvXlib\vendor\duckdb-bin;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>MaxSpeed</Optimization>
@@ -193,7 +193,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)'=='ReleaseWithDebugInfo'">
     <ClCompile>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\include;$(ProjectDir)..\src;$(ProjectDir)..\vendor\rapidjson\include;$(ProjectDir)..\vendor\yyjson\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\CWvXlib\include;$(ProjectDir)..\include;$(ProjectDir)..\src;$(ProjectDir)vendor\rapidjson\include;$(ProjectDir)vendor\yyjson\src;$(ProjectDir)..\CWvXlib\vendor\duckdb-bin;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>MaxSpeed</Optimization>
@@ -209,7 +209,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug-Static'">
     <ClCompile>
       <PreprocessorDefinitions>CXLSX_STATIC;_CRT_SECURE_NO_WARNINGS;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\include;$(ProjectDir)..\src;$(ProjectDir)..\vendor\rapidjson\include;$(ProjectDir)..\vendor\yyjson\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\CWvXlib\include;$(ProjectDir)..\include;$(ProjectDir)..\src;$(ProjectDir)vendor\rapidjson\include;$(ProjectDir)vendor\yyjson\src;$(ProjectDir)..\CWvXlib\vendor\duckdb-bin;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
@@ -224,7 +224,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release-Static'">
     <ClCompile>
       <PreprocessorDefinitions>CXLSX_STATIC;_CRT_SECURE_NO_WARNINGS;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\include;$(ProjectDir)..\src;$(ProjectDir)..\vendor\rapidjson\include;$(ProjectDir)..\vendor\yyjson\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\CWvXlib\include;$(ProjectDir)..\include;$(ProjectDir)..\src;$(ProjectDir)vendor\rapidjson\include;$(ProjectDir)vendor\yyjson\src;$(ProjectDir)..\CWvXlib\vendor\duckdb-bin;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>MaxSpeed</Optimization>
@@ -240,7 +240,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)'=='ReleaseWithDebugInfo-Static'">
     <ClCompile>
       <PreprocessorDefinitions>CXLSX_STATIC;_CRT_SECURE_NO_WARNINGS;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\include;$(ProjectDir)..\src;$(ProjectDir)..\vendor\rapidjson\include;$(ProjectDir)..\vendor\yyjson\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\CWvXlib\include;$(ProjectDir)..\include;$(ProjectDir)..\src;$(ProjectDir)vendor\rapidjson\include;$(ProjectDir)vendor\yyjson\src;$(ProjectDir)..\CWvXlib\vendor\duckdb-bin;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>MaxSpeed</Optimization>
@@ -257,7 +257,7 @@
     <ClCompile Include="CWvExport.cpp">
       <CompileAs>Default</CompileAs>
     </ClCompile>
-    <ClCompile Include="..\vendor\yyjson\src\yyjson.c">
+    <ClCompile Include="vendor\yyjson\src\yyjson.c">
       <CompileAs>CompileAsC</CompileAs>
     </ClCompile>
     <ClCompile Include="providers\SqliteProvider.cpp">

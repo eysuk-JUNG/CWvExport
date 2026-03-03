@@ -3,7 +3,7 @@
 
 #include "IDataSourceProvider.h"
 
-#include "../../vendor/duckdb-bin/duckdb.h"
+#include <duckdb.h>
 
 #include <string>
 #include <vector>

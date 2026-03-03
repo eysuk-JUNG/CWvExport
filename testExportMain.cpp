@@ -2,7 +2,7 @@
 
 #include "cxlsx/cxlsx.h"
 
-#include "../vendor/duckdb-bin/duckdb.h"
+#include <duckdb.h>
 #include <sqlite3.h>
 
 #include <algorithm>
