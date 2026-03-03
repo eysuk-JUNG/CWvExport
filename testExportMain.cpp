@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -734,6 +735,119 @@ int run_split_focus_tests(const char *db_path, CWvDataSourceType source_type,
   printf("[testExport] split-focus all checks passed.\n");
   return 0;
 }
+
+int run_clipboard_focus_tests(const char *db_path, CWvDataSourceType source_type,
+                              const std::vector<CWvExportColumn> &mapping) {
+  CWvExportOptions opt;
+  opt.source_type = source_type;
+  opt.export_format = CWvExportFormat::Clipboard;
+  opt.table_name = "sample_data";
+  opt.include_header = true;
+  opt.enforce_source_index = true;
+  opt.max_clipboard_bytes = 128u * 1024u * 1024u;
+  opt.max_clipboard_rows = 1000000;
+
+  // 1) Interactive flow simulation: y, y, n -> 20,000 rows copied (2 chunks)
+  {
+    opt.clipboard_chunk_rows = 10000;
+    opt.clipboard_chunk_confirm = [](int copied_rows, int) {
+      return (copied_rows < 20000) ? CWvClipboardChunkAction::Continue
+                                    : CWvClipboardChunkAction::Stop;
+    };
+
+    CWvExport exporter;
+    CWvExportResult res;
+    if (!exporter.Export(db_path, mapping, opt, &res)) {
+      fprintf(stderr, "[testExport] clipboard-focus yyn export failed: %s\n",
+              exporter.GetLastError().c_str());
+      return 41;
+    }
+    if (!res.stopped_by_user || res.clipboard_chunks_copied != 2 || res.rows_exported != 20000) {
+      fprintf(stderr, "[testExport] clipboard-focus yyn verify failed (rows=%d chunks=%d stop=%d).\n",
+              res.rows_exported, res.clipboard_chunks_copied, res.stopped_by_user ? 1 : 0);
+      return 42;
+    }
+  }
+
+  // 2) Interactive flow simulation: n -> 10,000 rows copied (1 chunk)
+  {
+    opt.clipboard_chunk_rows = 10000;
+    opt.clipboard_chunk_confirm = [](int, int) { return CWvClipboardChunkAction::Stop; };
+
+    CWvExport exporter;
+    CWvExportResult res;
+    if (!exporter.Export(db_path, mapping, opt, &res)) {
+      fprintf(stderr, "[testExport] clipboard-focus n export failed: %s\n",
+              exporter.GetLastError().c_str());
+      return 43;
+    }
+    if (!res.stopped_by_user || res.clipboard_chunks_copied != 1 || res.rows_exported != 10000) {
+      fprintf(stderr, "[testExport] clipboard-focus n verify failed (rows=%d chunks=%d stop=%d).\n",
+              res.rows_exported, res.clipboard_chunks_copied, res.stopped_by_user ? 1 : 0);
+      return 44;
+    }
+  }
+
+  // 3) Validation: chunk size without callback must fail
+  {
+    opt.clipboard_chunk_rows = 10000;
+    opt.clipboard_chunk_confirm = {};
+
+    CWvExport exporter;
+    CWvExportResult res;
+    if (exporter.Export(db_path, mapping, opt, &res)) {
+      fprintf(stderr, "[testExport] clipboard-focus missing callback expected failure.\n");
+      return 45;
+    }
+    if (exporter.GetLastError().find("clipboard_chunk_confirm") == std::string::npos) {
+      fprintf(stderr, "[testExport] clipboard-focus missing callback wrong error: %s\n",
+              exporter.GetLastError().c_str());
+      return 46;
+    }
+  }
+
+  // 4) Callback exception should fail safely
+  {
+    opt.clipboard_chunk_rows = 10000;
+    opt.clipboard_chunk_confirm = [](int, int) -> CWvClipboardChunkAction {
+      throw std::runtime_error("boom");
+    };
+
+    CWvExport exporter;
+    CWvExportResult res;
+    if (exporter.Export(db_path, mapping, opt, &res)) {
+      fprintf(stderr, "[testExport] clipboard-focus callback throw expected failure.\n");
+      return 47;
+    }
+    if (exporter.GetLastError().find("callback threw") == std::string::npos) {
+      fprintf(stderr, "[testExport] clipboard-focus callback throw wrong error: %s\n",
+              exporter.GetLastError().c_str());
+      return 48;
+    }
+  }
+
+  // 5) Boundary: max_clipboard_rows = 1 must fail by row-limit
+  {
+    opt.clipboard_chunk_rows = 0;
+    opt.clipboard_chunk_confirm = {};
+    opt.max_clipboard_rows = 1;
+
+    CWvExport exporter;
+    CWvExportResult res;
+    if (exporter.Export(db_path, mapping, opt, &res)) {
+      fprintf(stderr, "[testExport] clipboard-focus row limit expected failure.\n");
+      return 49;
+    }
+    if (exporter.GetLastError().find("max_clipboard_rows") == std::string::npos) {
+      fprintf(stderr, "[testExport] clipboard-focus row limit wrong error: %s\n",
+              exporter.GetLastError().c_str());
+      return 50;
+    }
+  }
+
+  printf("[testExport] clipboard-focus all checks passed.\n");
+  return 0;
+}
 } // namespace
 
 int main(int argc, char **argv) {
@@ -962,6 +1076,23 @@ int main(int argc, char **argv) {
     }
     fprintf(stderr, "[testExport] unknown source: %s (use sqlite|duckdb)\n", source);
     return 6;
+  } else if (strcmp(mode, "clipboard-check") == 0) {
+    if (strcmp(source, "sqlite") == 0) {
+      if (create_seed_sqlite_db(db_path, 25000) != 0) {
+        fprintf(stderr, "[testExport] failed to create sqlite seed db for clipboard-check.\n");
+        return 1;
+      }
+      return run_clipboard_focus_tests(db_path, CWvDataSourceType::Sqlite, mapping);
+    }
+    if (strcmp(source, "duckdb") == 0) {
+      if (create_seed_duckdb_db(db_path, 25000) != 0) {
+        fprintf(stderr, "[testExport] failed to create duckdb seed db for clipboard-check.\n");
+        return 1;
+      }
+      return run_clipboard_focus_tests(db_path, CWvDataSourceType::DuckDb, mapping);
+    }
+    fprintf(stderr, "[testExport] unknown source: %s (use sqlite|duckdb)\n", source);
+    return 6;
   } else if (strcmp(mode, "json-rapid") == 0) {
     opt.export_format = CWvExportFormat::Json;
     opt.json_backend = CWvJsonBackend::RapidJson;
@@ -997,7 +1128,7 @@ int main(int argc, char **argv) {
     opt.export_format = CWvExportFormat::Clipboard;
     opt.max_clipboard_bytes = 256;
   } else if (strcmp(mode, "xlsx") != 0) {
-    fprintf(stderr, "[testExport] unknown mode: %s (use xlsx|csv|csv-ansi|csv-check|split-check|json-rapid|json-yy|clipboard|clipboard-chunk|clipboard-limit|all|cancel)\n",
+    fprintf(stderr, "[testExport] unknown mode: %s (use xlsx|csv|csv-ansi|csv-check|split-check|clipboard-check|json-rapid|json-yy|clipboard|clipboard-chunk|clipboard-limit|all|cancel)\n",
             mode);
     return 5;
   }
