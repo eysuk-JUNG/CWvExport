@@ -6,12 +6,14 @@
 #include <sqlite3.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -953,6 +955,81 @@ int run_writer_focus_tests(const char *db_path, CWvDataSourceType source_type,
   printf("[testExport] writer-focus all checks passed.\n");
   return 0;
 }
+
+int run_internal_stress_tests(const char *db_path, CWvDataSourceType source_type,
+                              const std::vector<CWvExportColumn> &mapping) {
+  struct StressCase {
+    CWvExportFormat format;
+    CWvJsonBackend json_backend;
+    const char *tag;
+    const char *ext;
+  };
+  const StressCase cases[] = {
+      {CWvExportFormat::Xlsx, CWvJsonBackend::RapidJson, "xlsx", ".xlsx"},
+      {CWvExportFormat::Csv, CWvJsonBackend::RapidJson, "csv", ".csv"},
+      {CWvExportFormat::Json, CWvJsonBackend::RapidJson, "jsonr", ".json"},
+      {CWvExportFormat::Json, CWvJsonBackend::YyJson, "jsony", ".json"},
+  };
+
+  constexpr int kThreads = 4;
+  constexpr int kIterationsPerThread = 8;
+  std::atomic<int> pass_count{0};
+  std::atomic<int> fail_count{0};
+  std::mutex fail_mu;
+  std::string first_error;
+
+  std::vector<std::thread> workers;
+  workers.reserve(kThreads);
+
+  for (int t = 0; t < kThreads; ++t) {
+    workers.emplace_back([&, t]() {
+      for (int i = 0; i < kIterationsPerThread; ++i) {
+        for (const auto &c : cases) {
+          char out_path[256];
+          std::snprintf(out_path, sizeof(out_path), "out_test/stress_%s_t%02d_i%03d%s", c.tag,
+                        t, i, c.ext);
+
+          CWvExportOptions opt;
+          opt.source_type = source_type;
+          opt.export_format = c.format;
+          opt.json_backend = c.json_backend;
+          opt.table_name = "sample_data";
+          opt.sheet_name = "ExportData";
+          opt.output_path = out_path;
+          opt.include_header = true;
+          opt.enforce_source_index = true;
+
+          CWvExport exporter;
+          CWvExportResult res;
+          if (!exporter.Export(db_path, mapping, opt, &res)) {
+            fail_count.fetch_add(1, std::memory_order_relaxed);
+            std::lock_guard<std::mutex> lock(fail_mu);
+            if (first_error.empty()) {
+              first_error = std::string("t=") + std::to_string(t) + " i=" +
+                            std::to_string(i) + " case=" + c.tag + " err=" +
+                            exporter.GetLastError();
+            }
+          } else {
+            pass_count.fetch_add(1, std::memory_order_relaxed);
+          }
+        }
+      }
+    });
+  }
+
+  for (auto &w : workers) {
+    w.join();
+  }
+
+  printf("[testExport] stress done: pass=%d fail=%d (threads=%d iter/thread=%d)\n",
+         pass_count.load(), fail_count.load(), kThreads, kIterationsPerThread);
+  if (fail_count.load() != 0) {
+    fprintf(stderr, "[testExport] stress failed: %s\n",
+            first_error.empty() ? "unknown failure" : first_error.c_str());
+    return 71;
+  }
+  return 0;
+}
 } // namespace
 
 int main(int argc, char **argv) {
@@ -1235,6 +1312,23 @@ int main(int argc, char **argv) {
     }
     fprintf(stderr, "[testExport] unknown source: %s (use sqlite|duckdb)\n", source);
     return 6;
+  } else if (strcmp(mode, "stress") == 0) {
+    if (strcmp(source, "sqlite") == 0) {
+      if (create_seed_sqlite_db(db_path, kSeedRowCount) != 0) {
+        fprintf(stderr, "[testExport] failed to create sqlite seed db for stress.\n");
+        return 1;
+      }
+      return run_internal_stress_tests(db_path, CWvDataSourceType::Sqlite, mapping);
+    }
+    if (strcmp(source, "duckdb") == 0) {
+      if (create_seed_duckdb_db(db_path, kSeedRowCount) != 0) {
+        fprintf(stderr, "[testExport] failed to create duckdb seed db for stress.\n");
+        return 1;
+      }
+      return run_internal_stress_tests(db_path, CWvDataSourceType::DuckDb, mapping);
+    }
+    fprintf(stderr, "[testExport] unknown source: %s (use sqlite|duckdb)\n", source);
+    return 6;
   } else if (strcmp(mode, "json-rapid") == 0) {
     opt.export_format = CWvExportFormat::Json;
     opt.json_backend = CWvJsonBackend::RapidJson;
@@ -1270,7 +1364,7 @@ int main(int argc, char **argv) {
     opt.export_format = CWvExportFormat::Clipboard;
     opt.max_clipboard_bytes = 256;
   } else if (strcmp(mode, "xlsx") != 0) {
-    fprintf(stderr, "[testExport] unknown mode: %s (use xlsx|csv|csv-ansi|csv-check|split-check|clipboard-check|writer-check|json-rapid|json-yy|clipboard|clipboard-chunk|clipboard-limit|all|cancel)\n",
+    fprintf(stderr, "[testExport] unknown mode: %s (use xlsx|csv|csv-ansi|csv-check|split-check|clipboard-check|writer-check|stress|json-rapid|json-yy|clipboard|clipboard-chunk|clipboard-limit|all|cancel)\n",
             mode);
     return 5;
   }
