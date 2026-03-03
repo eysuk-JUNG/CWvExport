@@ -1,4 +1,4 @@
-#include "CWvExport.h"
+﻿#include "CWvExport.h"
 
 #include "cxlsx/cxlsx.h"
 
@@ -14,10 +14,14 @@
 #include <fstream>
 #include <iterator>
 #include <mutex>
+#include <unordered_map>
 #include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
+#if defined(_WIN32)
+#include <windows.h>
+#endif
 
 namespace {
 constexpr const char *kDefaultDbPath = "test_export_cache.db";
@@ -124,6 +128,20 @@ bool duckdb_exec(duckdb_connection conn, const char *sql, std::string *err) {
   return true;
 }
 
+std::string sql_escape_single_quoted(const std::string &value) {
+  std::string out;
+  out.reserve(value.size() + 8);
+  for (char ch : value) {
+    if (ch == '\'') {
+      out.push_back('\'');
+      out.push_back('\'');
+    } else {
+      out.push_back(ch);
+    }
+  }
+  return out;
+}
+
 int create_seed_duckdb_db(const char *db_path, int row_count) {
   duckdb_database db = nullptr;
   duckdb_connection conn = nullptr;
@@ -182,6 +200,121 @@ int create_seed_duckdb_db(const char *db_path, int row_count) {
     duckdb_disconnect(&conn);
     duckdb_close(&db);
     return -1;
+  }
+
+  duckdb_disconnect(&conn);
+  duckdb_close(&db);
+  return 0;
+}
+
+int create_special_sqlite_table(const char *db_path) {
+  sqlite3 *db = nullptr;
+  sqlite3_stmt *stmt = nullptr;
+  if (sqlite3_open(db_path, &db) != SQLITE_OK) {
+    sqlite3_close(db);
+    return -1;
+  }
+  const char *ddl =
+      "CREATE TABLE IF NOT EXISTS sample_data_special ("
+      "id INTEGER PRIMARY KEY, name TEXT, sql_text TEXT, score INTEGER, created_at TEXT);";
+  if (sqlite3_exec(db, ddl, nullptr, nullptr, nullptr) != SQLITE_OK) {
+    sqlite3_close(db);
+    return -1;
+  }
+  if (sqlite3_exec(db, "DELETE FROM sample_data_special;", nullptr, nullptr, nullptr) !=
+      SQLITE_OK) {
+    sqlite3_close(db);
+    return -1;
+  }
+
+  if (sqlite3_prepare_v2(db,
+                         "INSERT INTO sample_data_special "
+                         "(id,name,sql_text,score,created_at) VALUES (?,?,?,?,?);",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    sqlite3_close(db);
+    return -1;
+  }
+
+  struct Row {
+    int id;
+    const char *name;
+    const char *sql;
+    int score;
+  };
+  const Row rows[] = {
+      {1, u8"\uD55C\uAE00 \"\uB530\uC634\uD45C\", \uC27C\uD45C", "SELECT \"A\", 'B', 1,\n2", 7},
+      {2, u8"\u4E2D\u6587,\u9017\u53F7", "line1\r\nline2 \"quote\"", 8},
+      {3, u8"\u65E5\u672C\u8A9E\u30C6\u30B9\u30C8", u8"\u5024=\"\u6771\u4EAC\", note='\u5927\u962A'", 9},
+      {4, "O'Reilly", "SELECT 'It''s fine';", 10},
+  };
+
+  for (const auto &r : rows) {
+    sqlite3_bind_int(stmt, 1, r.id);
+    sqlite3_bind_text(stmt, 2, r.name, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 3, r.sql, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 4, r.score);
+    sqlite3_bind_text(stmt, 5, "2026-03-03 12:00:00", -1, SQLITE_TRANSIENT);
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+      sqlite3_finalize(stmt);
+      sqlite3_close(db);
+      return -1;
+    }
+    sqlite3_reset(stmt);
+    sqlite3_clear_bindings(stmt);
+  }
+  sqlite3_finalize(stmt);
+  sqlite3_close(db);
+  return 0;
+}
+
+int create_special_duckdb_table(const char *db_path) {
+  duckdb_database db = nullptr;
+  duckdb_connection conn = nullptr;
+  std::string err;
+  if (duckdb_open(db_path, &db) != DuckDBSuccess) {
+    return -1;
+  }
+  if (duckdb_connect(db, &conn) != DuckDBSuccess) {
+    duckdb_close(&db);
+    return -1;
+  }
+  if (!duckdb_exec(conn,
+                   "CREATE TABLE IF NOT EXISTS sample_data_special ("
+                   "id BIGINT, name VARCHAR, sql_text VARCHAR, score BIGINT, created_at VARCHAR);",
+                   &err)) {
+    duckdb_disconnect(&conn);
+    duckdb_close(&db);
+    return -1;
+  }
+  if (!duckdb_exec(conn, "DELETE FROM sample_data_special;", &err)) {
+    duckdb_disconnect(&conn);
+    duckdb_close(&db);
+    return -1;
+  }
+
+  struct Row {
+    int id;
+    const char *name;
+    const char *sql;
+    int score;
+  };
+  const Row rows[] = {
+      {1, u8"\uD55C\uAE00 \"\uB530\uC634\uD45C\", \uC27C\uD45C", "SELECT \"A\", 'B', 1,\n2", 7},
+      {2, u8"\u4E2D\u6587,\u9017\u53F7", "line1\r\nline2 \"quote\"", 8},
+      {3, u8"\u65E5\u672C\u8A9E\u30C6\u30B9\u30C8", u8"\u5024=\"\u6771\u4EAC\", note='\u5927\u962A'", 9},
+      {4, "O'Reilly", "SELECT 'It''s fine';", 10},
+  };
+  for (const auto &r : rows) {
+    std::string sql = "INSERT INTO sample_data_special VALUES (";
+    sql += std::to_string(r.id) + ", '";
+    sql += sql_escape_single_quoted(r.name) + "', '";
+    sql += sql_escape_single_quoted(r.sql) + "', ";
+    sql += std::to_string(r.score) + ", '2026-03-03 12:00:00');";
+    if (!duckdb_exec(conn, sql.c_str(), &err)) {
+      duckdb_disconnect(&conn);
+      duckdb_close(&db);
+      return -1;
+    }
   }
 
   duckdb_disconnect(&conn);
@@ -459,6 +592,298 @@ bool csv_has_lf_without_crlf(const char *csv_path) {
                             std::istreambuf_iterator<char>());
   return content.find('\n') != std::string::npos &&
          content.find("\r\n") == std::string::npos;
+}
+
+bool parse_csv_file(const char *csv_path, std::vector<std::vector<std::string>> *rows) {
+  rows->clear();
+  std::ifstream in(csv_path, std::ios::binary);
+  if (!in.is_open()) {
+    return false;
+  }
+  std::string content((std::istreambuf_iterator<char>(in)),
+                      std::istreambuf_iterator<char>());
+
+  size_t pos = 0;
+  if (content.size() >= 3 &&
+      static_cast<unsigned char>(content[0]) == 0xEF &&
+      static_cast<unsigned char>(content[1]) == 0xBB &&
+      static_cast<unsigned char>(content[2]) == 0xBF) {
+    pos = 3;
+  }
+
+  bool in_quotes = false;
+  std::string field;
+  std::vector<std::string> row;
+  auto push_row = [&]() {
+    rows->push_back(row);
+    row.clear();
+  };
+
+  while (pos < content.size()) {
+    const char ch = content[pos++];
+    if (in_quotes) {
+      if (ch == '"') {
+        if (pos < content.size() && content[pos] == '"') {
+          field.push_back('"');
+          ++pos;
+        } else {
+          in_quotes = false;
+        }
+      } else {
+        field.push_back(ch);
+      }
+      continue;
+    }
+    if (ch == '"') {
+      in_quotes = true;
+      continue;
+    }
+    if (ch == ',') {
+      row.push_back(field);
+      field.clear();
+      continue;
+    }
+    if (ch == '\r') {
+      if (pos < content.size() && content[pos] == '\n') {
+        ++pos;
+      }
+      row.push_back(field);
+      field.clear();
+      push_row();
+      continue;
+    }
+    if (ch == '\n') {
+      row.push_back(field);
+      field.clear();
+      push_row();
+      continue;
+    }
+    field.push_back(ch);
+  }
+
+  if (in_quotes) {
+    return false;
+  }
+  if (!field.empty() || !row.empty()) {
+    row.push_back(field);
+    push_row();
+  }
+  return true;
+}
+
+bool verify_special_csv_rows(const char *csv_path) {
+  std::vector<std::vector<std::string>> rows;
+  if (!parse_csv_file(csv_path, &rows)) {
+    return false;
+  }
+  if (rows.size() != 5) {
+    return false;
+  }
+  if (rows[0].size() != 4 || rows[0][0] != "UserName" || rows[0][1] != "ID" ||
+      rows[0][2] != "SQL" || rows[0][3] != "Score") {
+    return false;
+  }
+
+  const std::string sep(1, '\x1f');
+  std::unordered_map<std::string, int> expected;
+  expected[std::string(u8"\uD55C\uAE00 \"\uB530\uC634\uD45C\", \uC27C\uD45C") + sep + "1" +
+           sep + "SELECT \"A\", 'B', 1,\n2" + sep + "7"] = 1;
+  expected[std::string(u8"\u4E2D\u6587,\u9017\u53F7") + sep + "2" + sep +
+           "line1\r\nline2 \"quote\"" + sep + "8"] = 1;
+  expected[std::string(u8"\u65E5\u672C\u8A9E\u30C6\u30B9\u30C8") + sep + "3" + sep +
+           std::string(u8"\u5024=\"\u6771\u4EAC\", note='\u5927\u962A'") + sep + "9"] = 1;
+  expected["O'Reilly" + sep + "4" + sep + "SELECT 'It''s fine';" + sep + "10"] = 1;
+
+  for (size_t i = 1; i < rows.size(); ++i) {
+    if (rows[i].size() != 4) {
+      return false;
+    }
+    const std::string key = rows[i][0] + sep + rows[i][1] + sep + rows[i][2] + sep + rows[i][3];
+    auto it = expected.find(key);
+    if (it == expected.end() || it->second == 0) {
+      return false;
+    }
+    it->second -= 1;
+  }
+  for (const auto &kv : expected) {
+    if (kv.second != 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+#if defined(_WIN32)
+bool read_clipboard_utf8(std::string *text, std::string *err) {
+  constexpr int kOpenRetries = 50;
+  bool opened = false;
+  for (int i = 0; i < kOpenRetries; ++i) {
+    if (OpenClipboard(nullptr) != 0) {
+      opened = true;
+      break;
+    }
+    Sleep(10);
+  }
+  if (!opened) {
+    *err = "OpenClipboard failed.";
+    return false;
+  }
+  bool ok = false;
+  do {
+    HANDLE h = GetClipboardData(CF_UNICODETEXT);
+    if (h == nullptr) {
+      *err = "GetClipboardData(CF_UNICODETEXT) failed.";
+      break;
+    }
+    const wchar_t *w = static_cast<const wchar_t *>(GlobalLock(h));
+    if (w == nullptr) {
+      *err = "GlobalLock clipboard handle failed.";
+      break;
+    }
+    const int needed =
+        WideCharToMultiByte(CP_UTF8, 0, w, -1, nullptr, 0, nullptr, nullptr);
+    if (needed <= 0) {
+      GlobalUnlock(h);
+      *err = "WideCharToMultiByte size query failed.";
+      break;
+    }
+    std::vector<char> utf8_buf(static_cast<size_t>(needed), '\0');
+    if (WideCharToMultiByte(CP_UTF8, 0, w, -1, utf8_buf.data(), needed, nullptr, nullptr) <=
+        0) {
+      GlobalUnlock(h);
+      *err = "WideCharToMultiByte conversion failed.";
+      break;
+    }
+    GlobalUnlock(h);
+    *text = std::string(utf8_buf.data());
+    ok = true;
+  } while (false);
+  CloseClipboard();
+  return ok;
+}
+#endif
+
+int run_provider_focus_tests(const char *db_path, CWvDataSourceType source_type,
+                             const std::vector<CWvExportColumn> &mapping) {
+  CWvExportOptions opt;
+  opt.source_type = source_type;
+  opt.export_format = CWvExportFormat::Csv;
+  opt.table_name = "sample_data";
+  opt.output_path = "out_test/provider_focus.csv";
+  opt.include_header = true;
+  opt.enforce_source_index = true;
+
+  const char *missing_path = (source_type == CWvDataSourceType::Sqlite)
+                                 ? "out_test/missing_provider_focus.sqlite"
+                                 : "out_test/missing_provider_focus.duckdb";
+  {
+    CWvExport exporter;
+    CWvExportResult res;
+    if (exporter.Export(missing_path, mapping, opt, &res)) {
+      fprintf(stderr, "[testExport] provider-focus missing-path expected failure.\n");
+      return 81;
+    }
+  }
+
+  {
+    CWvExportOptions bad_table = opt;
+    bad_table.table_name = "not_exists_table";
+    CWvExport exporter;
+    CWvExportResult res;
+    if (exporter.Export(db_path, mapping, bad_table, &res)) {
+      fprintf(stderr, "[testExport] provider-focus bad-table expected failure.\n");
+      return 82;
+    }
+    const std::string table_err = exporter.GetLastError();
+    if (table_err.find("Table not found") == std::string::npos &&
+        table_err.find("does not exist") == std::string::npos) {
+      fprintf(stderr, "[testExport] provider-focus bad-table wrong error: %s\n",
+              exporter.GetLastError().c_str());
+      return 83;
+    }
+  }
+
+  {
+    std::vector<CWvExportColumn> bad_mapping = mapping;
+    if (!bad_mapping.empty()) {
+      bad_mapping[0].source_name = "__missing_column__";
+    }
+    CWvExport exporter;
+    CWvExportResult res;
+    if (exporter.Export(db_path, bad_mapping, opt, &res)) {
+      fprintf(stderr, "[testExport] provider-focus bad-mapping expected failure.\n");
+      return 84;
+    }
+    if (exporter.GetLastError().find("Mapped column not found") == std::string::npos) {
+      fprintf(stderr, "[testExport] provider-focus bad-mapping wrong error: %s\n",
+              exporter.GetLastError().c_str());
+      return 85;
+    }
+  }
+
+  printf("[testExport] provider-focus all checks passed.\n");
+  return 0;
+}
+
+int run_csv_unicode_tests(const char *db_path, CWvDataSourceType source_type,
+                          const std::vector<CWvExportColumn> &mapping) {
+  int seed_rc = 0;
+  if (source_type == CWvDataSourceType::Sqlite) {
+    seed_rc = create_special_sqlite_table(db_path);
+  } else if (source_type == CWvDataSourceType::DuckDb) {
+    seed_rc = create_special_duckdb_table(db_path);
+  } else {
+    return 86;
+  }
+  if (seed_rc != 0) {
+    fprintf(stderr, "[testExport] csv-unicode failed to seed special table.\n");
+    return 86;
+  }
+
+  CWvExportOptions opt;
+  opt.source_type = source_type;
+  opt.export_format = CWvExportFormat::Csv;
+  opt.table_name = "sample_data_special";
+  opt.include_header = true;
+  opt.enforce_source_index = true;
+  opt.csv_use_utf8 = true;
+  opt.csv_use_crlf = true;
+  opt.output_path = "out_test/csv_unicode_utf8.csv";
+
+  {
+    CWvExport exporter;
+    CWvExportResult res;
+    if (!exporter.Export(db_path, mapping, opt, &res)) {
+      fprintf(stderr, "[testExport] csv-unicode utf8 export failed: %s\n",
+              exporter.GetLastError().c_str());
+      return 87;
+    }
+    if (verify_exported_csv(res.output_path.c_str(), 4) != 0 ||
+        !verify_special_csv_rows(res.output_path.c_str())) {
+      fprintf(stderr, "[testExport] csv-unicode utf8 verify failed.\n");
+      return 88;
+    }
+  }
+
+  {
+    CWvExportOptions ansi = opt;
+    ansi.csv_use_utf8 = false;
+    ansi.output_path = "out_test/csv_unicode_ansi.csv";
+    CWvExport exporter;
+    CWvExportResult res;
+    if (!exporter.Export(db_path, mapping, ansi, &res)) {
+      fprintf(stderr, "[testExport] csv-unicode ansi export failed: %s\n",
+              exporter.GetLastError().c_str());
+      return 89;
+    }
+    if (verify_exported_csv(res.output_path.c_str(), 4) != 0) {
+      fprintf(stderr, "[testExport] csv-unicode ansi verify failed.\n");
+      return 90;
+    }
+  }
+
+  printf("[testExport] csv-unicode all checks passed.\n");
+  return 0;
 }
 
 std::vector<std::string> find_part_files(const std::string &base_out) {
@@ -796,6 +1221,25 @@ int run_clipboard_focus_tests(const char *db_path, CWvDataSourceType source_type
               res.rows_exported, res.clipboard_chunks_copied, res.stopped_by_user ? 1 : 0);
       return 42;
     }
+#if defined(_WIN32)
+    std::string clip;
+    std::string clip_err;
+    if (!read_clipboard_utf8(&clip, &clip_err)) {
+      fprintf(stderr, "[testExport] clipboard-focus yyn read failed: %s\n", clip_err.c_str());
+      return 42;
+    }
+    int line_count = 0;
+    for (char ch : clip) {
+      if (ch == '\n') {
+        ++line_count;
+      }
+    }
+    if (line_count != 10000 ||
+        clip.rfind("UserName\tID\tSQL\tScore\r\n", 0) == 0) {
+      fprintf(stderr, "[testExport] clipboard-focus yyn content verify failed.\n");
+      return 42;
+    }
+#endif
   }
 
   // 2) Interactive flow simulation: n -> 10,000 rows copied (1 chunk)
@@ -815,6 +1259,25 @@ int run_clipboard_focus_tests(const char *db_path, CWvDataSourceType source_type
               res.rows_exported, res.clipboard_chunks_copied, res.stopped_by_user ? 1 : 0);
       return 44;
     }
+#if defined(_WIN32)
+    std::string clip;
+    std::string clip_err;
+    if (!read_clipboard_utf8(&clip, &clip_err)) {
+      fprintf(stderr, "[testExport] clipboard-focus n read failed: %s\n", clip_err.c_str());
+      return 44;
+    }
+    int line_count = 0;
+    for (char ch : clip) {
+      if (ch == '\n') {
+        ++line_count;
+      }
+    }
+    if (line_count != 10001 ||
+        clip.rfind("UserName\tID\tSQL\tScore\r\n", 0) != 0) {
+      fprintf(stderr, "[testExport] clipboard-focus n content verify failed.\n");
+      return 44;
+    }
+#endif
   }
 
   // 3) Validation: chunk size without callback must fail
@@ -1062,39 +1525,48 @@ int main(int argc, char **argv) {
     }
   }
 
-  if (!skip_seed && strcmp(mode, "all") != 0) {
-    if (argc < 2 && strcmp(source, "duckdb") == 0) {
-      db_path = kDefaultDuckDbPath;
-    }
+  std::string all_sqlite_db_path = kDefaultDbPath;
+  std::string all_duckdb_db_path = kDefaultDuckDbPath;
+  if (strcmp(mode, "all") == 0) {
+    all_sqlite_db_path = std::string(db_path) + ".all.sqlite.db";
+    all_duckdb_db_path = std::string(db_path) + ".all.duckdb";
+  }
 
-    if (strcmp(source, "sqlite") == 0) {
-      if (create_seed_sqlite_db(db_path, kSeedRowCount) != 0) {
+  if (!skip_seed) {
+    if (strcmp(mode, "all") != 0) {
+      if (argc < 2 && strcmp(source, "duckdb") == 0) {
+        db_path = kDefaultDuckDbPath;
+      }
+
+      if (strcmp(source, "sqlite") == 0) {
+        if (create_seed_sqlite_db(db_path, kSeedRowCount) != 0) {
+          fprintf(stderr, "[testExport] failed to create sqlite seed db.\n");
+          return 1;
+        }
+      } else if (strcmp(source, "duckdb") == 0) {
+        if (create_seed_duckdb_db(db_path, kSeedRowCount) != 0) {
+          fprintf(stderr, "[testExport] failed to create duckdb seed db.\n");
+          return 1;
+        }
+      } else {
+        fprintf(stderr, "[testExport] unknown source: %s (use sqlite|duckdb)\n", source);
+        return 6;
+      }
+    } else {
+      std::error_code ec;
+      std::filesystem::remove(all_sqlite_db_path, ec);
+      std::filesystem::remove(all_sqlite_db_path + "-shm", ec);
+      std::filesystem::remove(all_sqlite_db_path + "-wal", ec);
+      std::filesystem::remove(all_duckdb_db_path, ec);
+
+      if (create_seed_sqlite_db(all_sqlite_db_path.c_str(), kSeedRowCount) != 0) {
         fprintf(stderr, "[testExport] failed to create sqlite seed db.\n");
         return 1;
       }
-    } else if (strcmp(source, "duckdb") == 0) {
-      if (create_seed_duckdb_db(db_path, kSeedRowCount) != 0) {
+      if (create_seed_duckdb_db(all_duckdb_db_path.c_str(), kSeedRowCount) != 0) {
         fprintf(stderr, "[testExport] failed to create duckdb seed db.\n");
         return 1;
       }
-    } else {
-      fprintf(stderr, "[testExport] unknown source: %s (use sqlite|duckdb)\n", source);
-      return 6;
-    }
-  } else {
-    std::error_code ec;
-    std::filesystem::remove(kDefaultDbPath, ec);
-    std::filesystem::remove(std::string(kDefaultDbPath) + "-shm", ec);
-    std::filesystem::remove(std::string(kDefaultDbPath) + "-wal", ec);
-    std::filesystem::remove(kDefaultDuckDbPath, ec);
-
-    if (create_seed_sqlite_db(kDefaultDbPath, kSeedRowCount) != 0) {
-      fprintf(stderr, "[testExport] failed to create sqlite seed db.\n");
-      return 1;
-    }
-    if (create_seed_duckdb_db(kDefaultDuckDbPath, kSeedRowCount) != 0) {
-      fprintf(stderr, "[testExport] failed to create duckdb seed db.\n");
-      return 1;
     }
   }
   if (cxlsx_init(kTestLicenseKey) != 0 || cxlsx_license_active() != 1) {
@@ -1129,28 +1601,28 @@ int main(int argc, char **argv) {
     };
     const ExportCase cases[] = {
         {CWvDataSourceType::Sqlite, CWvExportFormat::Xlsx, CWvJsonBackend::RapidJson,
-         kDefaultDbPath,
+         all_sqlite_db_path.c_str(),
          "out_test/all_sqlite.xlsx", "sqlite+xlsx"},
         {CWvDataSourceType::Sqlite, CWvExportFormat::Json, CWvJsonBackend::RapidJson,
-         kDefaultDbPath,
+         all_sqlite_db_path.c_str(),
          "out_test/all_sqlite.json", "sqlite+json-rapid"},
         {CWvDataSourceType::Sqlite, CWvExportFormat::Json, CWvJsonBackend::YyJson,
-         kDefaultDbPath,
+         all_sqlite_db_path.c_str(),
          "out_test/all_sqlite_yy.json", "sqlite+json-yy"},
         {CWvDataSourceType::Sqlite, CWvExportFormat::Csv, CWvJsonBackend::RapidJson,
-         kDefaultDbPath,
+         all_sqlite_db_path.c_str(),
          "out_test/all_sqlite.csv", "sqlite+csv"},
         {CWvDataSourceType::DuckDb, CWvExportFormat::Xlsx, CWvJsonBackend::RapidJson,
-         kDefaultDuckDbPath,
+         all_duckdb_db_path.c_str(),
          "out_test/all_duckdb.xlsx", "duckdb+xlsx"},
         {CWvDataSourceType::DuckDb, CWvExportFormat::Json, CWvJsonBackend::RapidJson,
-         kDefaultDuckDbPath,
+         all_duckdb_db_path.c_str(),
          "out_test/all_duckdb.json", "duckdb+json-rapid"},
         {CWvDataSourceType::DuckDb, CWvExportFormat::Json, CWvJsonBackend::YyJson,
-         kDefaultDuckDbPath,
+         all_duckdb_db_path.c_str(),
          "out_test/all_duckdb_yy.json", "duckdb+json-yy"},
         {CWvDataSourceType::DuckDb, CWvExportFormat::Csv, CWvJsonBackend::RapidJson,
-         kDefaultDuckDbPath,
+         all_duckdb_db_path.c_str(),
          "out_test/all_duckdb.csv", "duckdb+csv"},
     };
 
@@ -1252,6 +1724,23 @@ int main(int argc, char **argv) {
     }
     fprintf(stderr, "[testExport] unknown source: %s (use sqlite|duckdb)\n", source);
     return 6;
+  } else if (strcmp(mode, "csv-unicode") == 0) {
+    if (strcmp(source, "sqlite") == 0) {
+      if (create_seed_sqlite_db(db_path, kSeedRowCount) != 0) {
+        fprintf(stderr, "[testExport] failed to create sqlite seed db for csv-unicode.\n");
+        return 1;
+      }
+      return run_csv_unicode_tests(db_path, CWvDataSourceType::Sqlite, mapping);
+    }
+    if (strcmp(source, "duckdb") == 0) {
+      if (create_seed_duckdb_db(db_path, kSeedRowCount) != 0) {
+        fprintf(stderr, "[testExport] failed to create duckdb seed db for csv-unicode.\n");
+        return 1;
+      }
+      return run_csv_unicode_tests(db_path, CWvDataSourceType::DuckDb, mapping);
+    }
+    fprintf(stderr, "[testExport] unknown source: %s (use sqlite|duckdb)\n", source);
+    return 6;
   } else if (strcmp(mode, "split-check") == 0) {
     int expected_rows = 0;
     if (strcmp(source, "sqlite") == 0) {
@@ -1292,6 +1781,23 @@ int main(int argc, char **argv) {
         return 1;
       }
       return run_clipboard_focus_tests(db_path, CWvDataSourceType::DuckDb, mapping);
+    }
+    fprintf(stderr, "[testExport] unknown source: %s (use sqlite|duckdb)\n", source);
+    return 6;
+  } else if (strcmp(mode, "provider-check") == 0) {
+    if (strcmp(source, "sqlite") == 0) {
+      if (create_seed_sqlite_db(db_path, kSeedRowCount) != 0) {
+        fprintf(stderr, "[testExport] failed to create sqlite seed db for provider-check.\n");
+        return 1;
+      }
+      return run_provider_focus_tests(db_path, CWvDataSourceType::Sqlite, mapping);
+    }
+    if (strcmp(source, "duckdb") == 0) {
+      if (create_seed_duckdb_db(db_path, kSeedRowCount) != 0) {
+        fprintf(stderr, "[testExport] failed to create duckdb seed db for provider-check.\n");
+        return 1;
+      }
+      return run_provider_focus_tests(db_path, CWvDataSourceType::DuckDb, mapping);
     }
     fprintf(stderr, "[testExport] unknown source: %s (use sqlite|duckdb)\n", source);
     return 6;
@@ -1364,7 +1870,7 @@ int main(int argc, char **argv) {
     opt.export_format = CWvExportFormat::Clipboard;
     opt.max_clipboard_bytes = 256;
   } else if (strcmp(mode, "xlsx") != 0) {
-    fprintf(stderr, "[testExport] unknown mode: %s (use xlsx|csv|csv-ansi|csv-check|split-check|clipboard-check|writer-check|stress|json-rapid|json-yy|clipboard|clipboard-chunk|clipboard-limit|all|cancel)\n",
+    fprintf(stderr, "[testExport] unknown mode: %s (use xlsx|csv|csv-ansi|csv-check|csv-unicode|split-check|clipboard-check|provider-check|writer-check|stress|json-rapid|json-yy|clipboard|clipboard-chunk|clipboard-limit|all|cancel)\n",
             mode);
     return 5;
   }
@@ -1414,3 +1920,4 @@ int main(int argc, char **argv) {
   printf("[testExport] verify passed.\n");
   return 0;
 }
+
