@@ -48,7 +48,13 @@ bool prepare_output_path(const std::string &raw, CWvExportFormat format,
     return false;
   }
 
-  std::filesystem::path out_path(trimmed);
+  std::filesystem::path out_path;
+  try {
+    out_path = std::filesystem::u8path(trimmed);
+  } catch (...) {
+    *err = "invalid output_path encoding.";
+    return false;
+  }
   if (out_path.has_filename() == false) {
     *err = "output_path must include file name.";
     return false;
@@ -80,12 +86,41 @@ bool prepare_output_path(const std::string &raw, CWvExportFormat format,
       return false;
     }
   }
+#if defined(_WIN32)
+  if (!parent.empty()) {
+    const std::wstring parent_w = parent.wstring();
+    const DWORD parent_attr = GetFileAttributesW(parent_w.c_str());
+    if (parent_attr != INVALID_FILE_ATTRIBUTES &&
+        (parent_attr & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
+      *err = "output_path parent must not be a reparse point.";
+      return false;
+    }
+  }
+#endif
+  if (std::filesystem::exists(out_path, ec) && std::filesystem::is_directory(out_path, ec)) {
+    *err = "output_path must be a file path, not a directory.";
+    return false;
+  }
+#if defined(_WIN32)
+  if (std::filesystem::exists(out_path, ec)) {
+    const std::wstring out_w = out_path.wstring();
+    const DWORD out_attr = GetFileAttributesW(out_w.c_str());
+    if (out_attr != INVALID_FILE_ATTRIBUTES &&
+        (out_attr & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
+      *err = "output_path must not target a reparse point.";
+      return false;
+    }
+  }
+#endif
 
   *normalized = out_path.string();
   return true;
 }
 
 std::string make_unique_temp_path(const std::string &final_path) {
+  const std::filesystem::path final_p(final_path);
+  const std::string stem = final_p.filename().string();
+  const std::filesystem::path dir = final_p.parent_path();
   for (int attempt = 0; attempt < 32; ++attempt) {
     UUID uuid{};
     const RPC_STATUS uuid_rc = UuidCreate(&uuid);
@@ -98,15 +133,10 @@ std::string make_unique_temp_path(const std::string &final_path) {
       continue;
     }
 
-    const std::string candidate = final_path + ".tmp." + reinterpret_cast<const char *>(uuid_text);
+    const std::string candidate_name =
+        stem + ".tmp." + reinterpret_cast<const char *>(uuid_text);
     RpcStringFreeA(&uuid_text);
-
-    const HANDLE h = CreateFileA(candidate.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr,
-                                 CREATE_NEW, FILE_ATTRIBUTE_TEMPORARY, nullptr);
-    if (h != INVALID_HANDLE_VALUE) {
-      CloseHandle(h);
-      return candidate;
-    }
+    return (dir / candidate_name).string();
   }
 
   static volatile LONG s_temp_seq = 0;
@@ -130,7 +160,9 @@ std::string make_part_output_path(const std::string &base_path, int part_index,
 
 bool replace_file_safely(const std::string &from, const std::string &to,
                          std::string *err) {
-  if (MoveFileExA(from.c_str(), to.c_str(),
+  const std::wstring from_w = std::filesystem::path(from).wstring();
+  const std::wstring to_w = std::filesystem::path(to).wstring();
+  if (MoveFileExW(from_w.c_str(), to_w.c_str(),
                   MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) == 0) {
     const DWORD win_err = GetLastError();
     *err = "failed to replace output file. GetLastError=" +
@@ -270,10 +302,6 @@ std::unique_ptr<IExportWriter> make_writer(const CWvExportOptions &options,
     *err = "json backend is not supported.";
     return nullptr;
   }
-  if (options.export_format == CWvExportFormat::Csv) {
-    *err = "export_format Csv is not implemented yet.";
-    return nullptr;
-  }
   *err = "export_format is not supported.";
   return nullptr;
 }
@@ -339,6 +367,10 @@ bool CWvExport::Export(const std::string &source_path,
       options.export_format != CWvExportFormat::Clipboard) {
     last_error_ =
         "export_format is not implemented yet. Current implementation: Xlsx, Csv, Json, Clipboard.";
+    return false;
+  }
+  if (options.export_format == CWvExportFormat::Csv && !options.csv_use_utf8) {
+    last_error_ = "ANSI CSV is disabled. Use UTF-8 CSV only.";
     return false;
   }
 
@@ -432,7 +464,8 @@ bool CWvExport::Export(const std::string &source_path,
   auto cleanup_current_temp = [&writer, &current_temp_path]() {
     writer.reset();
     if (!current_temp_path.empty()) {
-      std::remove(current_temp_path.c_str());
+      std::error_code ec;
+      std::filesystem::remove(current_temp_path, ec);
       current_temp_path.clear();
     }
   };
@@ -482,12 +515,14 @@ bool CWvExport::Export(const std::string &source_path,
     }
 
     if (!commit) {
-      std::remove(current_temp_path.c_str());
+      std::error_code ec;
+      std::filesystem::remove(current_temp_path, ec);
       current_temp_path.clear();
       return true;
     }
     if (!replace_file_safely(current_temp_path, current_final_path, &last_error_)) {
-      std::remove(current_temp_path.c_str());
+      std::error_code ec;
+      std::filesystem::remove(current_temp_path, ec);
       current_temp_path.clear();
       return false;
     }
@@ -497,7 +532,8 @@ bool CWvExport::Export(const std::string &source_path,
   };
   auto cleanup_committed_outputs = [&output_paths]() {
     for (const auto &p : output_paths) {
-      std::remove(p.c_str());
+      std::error_code ec;
+      std::filesystem::remove(p, ec);
     }
   };
   auto cancel_and_finish = [&]() -> bool {

@@ -865,23 +865,6 @@ int run_csv_unicode_tests(const char *db_path, CWvDataSourceType source_type,
     }
   }
 
-  {
-    CWvExportOptions ansi = opt;
-    ansi.csv_use_utf8 = false;
-    ansi.output_path = "out_test/csv_unicode_ansi.csv";
-    CWvExport exporter;
-    CWvExportResult res;
-    if (!exporter.Export(db_path, mapping, ansi, &res)) {
-      fprintf(stderr, "[testExport] csv-unicode ansi export failed: %s\n",
-              exporter.GetLastError().c_str());
-      return 89;
-    }
-    if (verify_exported_csv(res.output_path.c_str(), 4) != 0) {
-      fprintf(stderr, "[testExport] csv-unicode ansi verify failed.\n");
-      return 90;
-    }
-  }
-
   printf("[testExport] csv-unicode all checks passed.\n");
   return 0;
 }
@@ -1033,21 +1016,22 @@ int run_csv_focus_tests(const char *db_path, CWvDataSourceType source_type,
     }
   }
 
-  // 3) ANSI mode
+  // 3) ANSI mode must be rejected
   {
-    opt.output_path = "out_test/csv_focus_ansi.csv";
-    opt.csv_use_utf8 = false;
-    opt.csv_use_crlf = true;
-    opt.max_rows_per_file = 0;
+    CWvExportOptions ansi = opt;
+    ansi.output_path = "out_test/csv_focus_ansi_should_fail.csv";
+    ansi.csv_use_utf8 = false;
+    ansi.csv_use_crlf = true;
+    ansi.max_rows_per_file = 0;
     CWvExport exporter;
     CWvExportResult res;
-    if (!exporter.Export(db_path, mapping, opt, &res)) {
-      fprintf(stderr, "[testExport] csv-focus ansi export failed: %s\n",
-              exporter.GetLastError().c_str());
+    if (exporter.Export(db_path, mapping, ansi, &res)) {
+      fprintf(stderr, "[testExport] csv-focus ansi should fail but succeeded.\n");
       return 25;
     }
-    if (verify_exported_csv(res.output_path.c_str(), expected_rows) != 0) {
-      fprintf(stderr, "[testExport] csv-focus ansi verify failed.\n");
+    if (exporter.GetLastError().find("ANSI CSV is disabled") == std::string::npos) {
+      fprintf(stderr, "[testExport] csv-focus ansi wrong error: %s\n",
+              exporter.GetLastError().c_str());
       return 26;
     }
   }
@@ -1843,9 +1827,6 @@ int main(int argc, char **argv) {
     opt.json_backend = CWvJsonBackend::YyJson;
   } else if (strcmp(mode, "csv") == 0) {
     opt.export_format = CWvExportFormat::Csv;
-  } else if (strcmp(mode, "csv-ansi") == 0) {
-    opt.export_format = CWvExportFormat::Csv;
-    opt.csv_use_utf8 = false;
   } else if (strcmp(mode, "clipboard") == 0) {
     opt.export_format = CWvExportFormat::Clipboard;
     opt.max_clipboard_bytes = 16u * 1024u * 1024u;
@@ -1870,7 +1851,7 @@ int main(int argc, char **argv) {
     opt.export_format = CWvExportFormat::Clipboard;
     opt.max_clipboard_bytes = 256;
   } else if (strcmp(mode, "xlsx") != 0) {
-    fprintf(stderr, "[testExport] unknown mode: %s (use xlsx|csv|csv-ansi|csv-check|csv-unicode|split-check|clipboard-check|provider-check|writer-check|stress|json-rapid|json-yy|clipboard|clipboard-chunk|clipboard-limit|all|cancel)\n",
+    fprintf(stderr, "[testExport] unknown mode: %s (use xlsx|csv|csv-check|csv-unicode|split-check|clipboard-check|provider-check|writer-check|stress|json-rapid|json-yy|clipboard|clipboard-chunk|clipboard-limit|all|cancel)\n",
             mode);
     return 5;
   }

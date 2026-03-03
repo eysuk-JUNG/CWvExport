@@ -36,7 +36,6 @@ private:
   bool FlushCurrentRow(std::string *err);
   void ResetCurrentRow();
   bool WriteEncodedLine(const std::string &line, std::string *err);
-  static bool Utf8ToAnsi(const std::string &utf8, std::string *ansi_out);
 
   std::ofstream out_;
   std::vector<std::string> headers_;
@@ -44,7 +43,6 @@ private:
   int current_row_index_ = -1;
   bool include_header_ = true;
   bool large_integer_as_text_ = true;
-  bool csv_use_utf8_ = true;
   bool csv_use_crlf_ = true;
 };
 
