@@ -960,6 +960,13 @@ int main(int argc, char **argv) {
   const char *xlsx_path = kDefaultXlsxPath;
   const char *mode = "xlsx";
   const char *source = "sqlite";
+  bool skip_seed = false;
+  if (const char *env_skip = std::getenv("TESTEXPORT_SKIP_SEED")) {
+    if (std::strcmp(env_skip, "1") == 0 || std::strcmp(env_skip, "true") == 0 ||
+        std::strcmp(env_skip, "TRUE") == 0) {
+      skip_seed = true;
+    }
+  }
   if (argc >= 2 && argv[1] != nullptr && argv[1][0] != '\0') {
     db_path = argv[1];
   }
@@ -972,8 +979,13 @@ int main(int argc, char **argv) {
   if (argc >= 5 && argv[4] != nullptr && argv[4][0] != '\0') {
     source = argv[4];
   }
+  if (argc >= 6 && argv[5] != nullptr && argv[5][0] != '\0') {
+    if (strcmp(argv[5], "skip-seed") == 0) {
+      skip_seed = true;
+    }
+  }
 
-  if (strcmp(mode, "all") != 0) {
+  if (!skip_seed && strcmp(mode, "all") != 0) {
     if (argc < 2 && strcmp(source, "duckdb") == 0) {
       db_path = kDefaultDuckDbPath;
     }
