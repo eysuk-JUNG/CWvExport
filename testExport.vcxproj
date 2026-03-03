@@ -308,5 +308,33 @@
     </ProjectReference>
   </ItemGroup>
 
+  <Target Name="CopyRuntimeDependencies" AfterTargets="Build"
+          Condition="'$(Configuration)'=='Debug' or '$(Configuration)'=='Release' or '$(Configuration)'=='ReleaseWithDebugInfo'">
+    <PropertyGroup>
+      <_SqliteDllPath>$(VcpkgInstalledDir)$(VcpkgTriplet)\bin\sqlite3.dll</_SqliteDllPath>
+      <_SqliteDllPath Condition="!Exists('$(_SqliteDllPath)')">$(USERPROFILE)\vcpkg\installed\$(VcpkgTriplet)\bin\sqlite3.dll</_SqliteDllPath>
+    </PropertyGroup>
+    <Copy SourceFiles="$(_SqliteDllPath)"
+          DestinationFolder="$(OutDir)"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(_SqliteDllPath)')" />
+    <Copy SourceFiles="$(ProjectDir)vendor\duckdb-bin\duckdb.dll"
+          DestinationFolder="$(OutDir)"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(ProjectDir)vendor\duckdb-bin\duckdb.dll')" />
+    <Copy SourceFiles="$(ProjectDir)vendor\CWvXlib\Libs\$(Platform)\Release\CWvXlib.dll"
+          DestinationFolder="$(OutDir)"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(ProjectDir)vendor\CWvXlib\Libs\$(Platform)\Release\CWvXlib.dll')" />
+    <Copy SourceFiles="$(ProjectDir)vendor\CWvXlib\Libs\$(Platform)\Release\libcrypto-3-x64.dll"
+          DestinationFolder="$(OutDir)"
+          SkipUnchangedFiles="true"
+          Condition="'$(Platform)'=='x64' and Exists('$(ProjectDir)vendor\CWvXlib\Libs\$(Platform)\Release\libcrypto-3-x64.dll')" />
+    <Copy SourceFiles="$(ProjectDir)vendor\CWvXlib\Libs\$(Platform)\Release\libssl-3-x64.dll"
+          DestinationFolder="$(OutDir)"
+          SkipUnchangedFiles="true"
+          Condition="'$(Platform)'=='x64' and Exists('$(ProjectDir)vendor\CWvXlib\Libs\$(Platform)\Release\libssl-3-x64.dll')" />
+  </Target>
+
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>
