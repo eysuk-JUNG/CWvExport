@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdio>
 #include <string>
+#include <windows.h>
 
 namespace {
 constexpr int64_t kMaxSafeJsonInt = 9007199254740991LL;
@@ -25,6 +26,8 @@ bool CsvWriter::Begin(const CWvExportOptions &options,
 
   include_header_ = options.include_header;
   large_integer_as_text_ = options.large_integer_as_text;
+  csv_use_utf8_ = options.csv_use_utf8;
+  csv_use_crlf_ = options.csv_use_crlf;
 
   out_.open(options.output_path, std::ios::binary | std::ios::trunc);
   if (!out_.is_open()) {
@@ -150,13 +153,12 @@ bool CsvWriter::WriteCsvRow(const std::vector<std::string> &cells, std::string *
     }
     AppendEscapedCsvCell(cells[i], &line);
   }
-  line.push_back('\n');
-  out_.write(line.data(), static_cast<std::streamsize>(line.size()));
-  if (!out_) {
-    *err = "failed to write CSV row.";
-    return false;
+  if (csv_use_crlf_) {
+    line.append("\r\n");
+  } else {
+    line.push_back('\n');
   }
-  return true;
+  return WriteEncodedLine(line, err);
 }
 
 bool CsvWriter::FlushCurrentRow(std::string *err) {
@@ -181,4 +183,60 @@ bool CsvWriter::FlushCurrentRow(std::string *err) {
 void CsvWriter::ResetCurrentRow() {
   current_row_.assign(headers_.size(), RowCell{});
   current_row_index_ = -1;
+}
+
+bool CsvWriter::WriteEncodedLine(const std::string &line, std::string *err) {
+  if (csv_use_utf8_) {
+    out_.write(line.data(), static_cast<std::streamsize>(line.size()));
+    if (!out_) {
+      *err = "failed to write CSV row.";
+      return false;
+    }
+    return true;
+  }
+
+  std::string ansi;
+  if (!Utf8ToAnsi(line, &ansi)) {
+    *err = "failed to convert CSV row from UTF-8 to ANSI.";
+    return false;
+  }
+  out_.write(ansi.data(), static_cast<std::streamsize>(ansi.size()));
+  if (!out_) {
+    *err = "failed to write CSV row.";
+    return false;
+  }
+  return true;
+}
+
+bool CsvWriter::Utf8ToAnsi(const std::string &utf8, std::string *ansi_out) {
+  ansi_out->clear();
+  if (utf8.empty()) {
+    return true;
+  }
+
+  const int wide_len = MultiByteToWideChar(CP_UTF8, 0, utf8.data(),
+                                           static_cast<int>(utf8.size()), nullptr, 0);
+  if (wide_len <= 0) {
+    return false;
+  }
+  std::wstring wide(static_cast<size_t>(wide_len), L'\0');
+  if (MultiByteToWideChar(CP_UTF8, 0, utf8.data(), static_cast<int>(utf8.size()),
+                          &wide[0], wide_len) <= 0) {
+    return false;
+  }
+
+  const int ansi_len = WideCharToMultiByte(CP_ACP, 0, wide.data(), wide_len, nullptr, 0,
+                                           nullptr, nullptr);
+  if (ansi_len < 0) {
+    return false;
+  }
+  ansi_out->assign(static_cast<size_t>(ansi_len), '\0');
+  if (ansi_len == 0) {
+    return true;
+  }
+  if (WideCharToMultiByte(CP_ACP, 0, wide.data(), wide_len, &(*ansi_out)[0], ansi_len,
+                          nullptr, nullptr) <= 0) {
+    return false;
+  }
+  return true;
 }

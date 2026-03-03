@@ -58,6 +58,8 @@ struct CWvExportOptions {
   bool include_header = true;
   bool enforce_source_index = false;
   bool large_integer_as_text = true;
+  bool csv_use_utf8 = true;
+  bool csv_use_crlf = true;
   CWvJsonBackend json_backend = CWvJsonBackend::RapidJson;
   CWvClipboardFormat clipboard_format = CWvClipboardFormat::PlainText;
   size_t max_clipboard_bytes = 16u * 1024u * 1024u;

@@ -209,26 +209,97 @@ int verify_exported_csv(const char *csv_path, int expected_rows) {
   if (!in.is_open()) {
     return -1;
   }
-  std::string header;
-  if (!std::getline(in, header)) {
-    return -1;
-  }
-  if (!header.empty() && header.back() == '\r') {
-    header.pop_back();
-  }
-  if (header != "UserName,ID,SQL,Score") {
-    return -1;
+  std::string content((std::istreambuf_iterator<char>(in)),
+                      std::istreambuf_iterator<char>());
+
+  // Detect UTF-8 BOM and consume it.
+  size_t pos = 0;
+  if (content.size() >= 3 &&
+      static_cast<unsigned char>(content[0]) == 0xEF &&
+      static_cast<unsigned char>(content[1]) == 0xBB &&
+      static_cast<unsigned char>(content[2]) == 0xBF) {
+    pos = 3;
   }
 
+  bool in_quotes = false;
+  std::string field;
+  std::vector<std::string> row;
   int data_rows = 0;
-  std::string line;
-  while (std::getline(in, line)) {
-    if (!line.empty() && line.back() == '\r') {
-      line.pop_back();
+  auto finish_row = [&]() -> int {
+    if (row.size() != 4) {
+      return -1;
+    }
+    if (data_rows == 0) {
+      if (row[0] != "UserName" || row[1] != "ID" || row[2] != "SQL" || row[3] != "Score") {
+        return -1;
+      }
     }
     ++data_rows;
+    row.clear();
+    return 0;
+  };
+
+  while (pos < content.size()) {
+    const char ch = content[pos++];
+    if (in_quotes) {
+      if (ch == '"') {
+        if (pos < content.size() && content[pos] == '"') {
+          field.push_back('"');
+          ++pos;
+        } else {
+          in_quotes = false;
+        }
+      } else {
+        field.push_back(ch);
+      }
+      continue;
+    }
+
+    if (ch == '"') {
+      in_quotes = true;
+      continue;
+    }
+    if (ch == ',') {
+      row.push_back(field);
+      field.clear();
+      continue;
+    }
+    if (ch == '\r') {
+      if (pos < content.size() && content[pos] == '\n') {
+        ++pos;
+      }
+      row.push_back(field);
+      field.clear();
+      if (finish_row() != 0) {
+        return -1;
+      }
+      continue;
+    }
+    if (ch == '\n') {
+      row.push_back(field);
+      field.clear();
+      if (finish_row() != 0) {
+        return -1;
+      }
+      continue;
+    }
+    field.push_back(ch);
   }
-  return (data_rows == expected_rows) ? 0 : -1;
+
+  // Final row (when file has no trailing newline).
+  if (in_quotes) {
+    return -1;
+  }
+  if (!field.empty() || !row.empty()) {
+    row.push_back(field);
+    if (finish_row() != 0) {
+      return -1;
+    }
+  }
+
+  // Exclude header row.
+  const int parsed_data_rows = (data_rows > 0) ? (data_rows - 1) : 0;
+  return (parsed_data_rows == expected_rows) ? 0 : -1;
 }
 
 std::vector<std::string> find_part_files(const std::string &base_out) {
@@ -511,6 +582,9 @@ int main(int argc, char **argv) {
     opt.json_backend = CWvJsonBackend::YyJson;
   } else if (strcmp(mode, "csv") == 0) {
     opt.export_format = CWvExportFormat::Csv;
+  } else if (strcmp(mode, "csv-ansi") == 0) {
+    opt.export_format = CWvExportFormat::Csv;
+    opt.csv_use_utf8 = false;
   } else if (strcmp(mode, "clipboard") == 0) {
     opt.export_format = CWvExportFormat::Clipboard;
     opt.max_clipboard_bytes = 16u * 1024u * 1024u;
@@ -518,7 +592,7 @@ int main(int argc, char **argv) {
     opt.export_format = CWvExportFormat::Clipboard;
     opt.max_clipboard_bytes = 256;
   } else if (strcmp(mode, "xlsx") != 0) {
-    fprintf(stderr, "[testExport] unknown mode: %s (use xlsx|csv|json-rapid|json-yy|clipboard|clipboard-limit|all|cancel)\n",
+    fprintf(stderr, "[testExport] unknown mode: %s (use xlsx|csv|csv-ansi|json-rapid|json-yy|clipboard|clipboard-limit|all|cancel)\n",
             mode);
     return 5;
   }
